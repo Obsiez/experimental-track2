@@ -11,12 +11,13 @@ import {
  increment, 
  serverTimestamp,
  writeBatch,
- limit
+ limit,
+ where
 } from 'firebase/firestore';
 import { db, auth, OperationType } from '../firebase';
 import { Customer, Transaction, Reminder, UserSettings } from '../types';
 
-export function useLedger(userId: string | undefined) {
+export function useLedger(userId: string | undefined, selectedDailyDate?: Date) {
  const [customers, setCustomers] = useState<Customer[]>([]);
  const [trashCustomers, setTrashCustomers] = useState<Customer[]>([]);
  const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -26,6 +27,7 @@ export function useLedger(userId: string | undefined) {
  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
  const [txLimit, setTxLimit] = useState(150);
  const [hasMoreTxs, setHasMoreTxs] = useState(true);
+ const [dailyTransactions, setDailyTransactions] = useState<Transaction[]>([]);
 
   const loadMoreTransactions = () => {
     setTxLimit(prev => prev + 150);
@@ -273,6 +275,83 @@ export function useLedger(userId: string | undefined) {
 
  return () => unsubscribe();
  }, [userId, txLimit]);
+
+  // 3b. Sync Daily Transactions (including archive date support)
+  useEffect(() => {
+    if (!userId) return;
+
+    if (userId === 'local-guest-session' || isOfflineFallback) {
+      // Local/offline: filter in-memory transactions
+      if (selectedDailyDate) {
+        const filterDateStr = selectedDailyDate.toDateString();
+        const filtered = transactions
+          .filter(tx => {
+            const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+            return d.toDateString() === filterDateStr;
+          })
+          .sort((a, b) => {
+            const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+            const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+            return dateB.getTime() - dateA.getTime();
+          });
+        setDailyTransactions(filtered);
+      }
+      return;
+    }
+
+    if (!selectedDailyDate) return;
+
+    const filterDateStr = selectedDailyDate.toDateString();
+    const isToday = filterDateStr === new Date().toDateString();
+
+    if (isToday) {
+      // Today: use in-memory transactions (real-time stream already loaded)
+      const filtered = transactions
+        .filter(tx => {
+          const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+          return d.toDateString() === filterDateStr;
+        })
+        .sort((a, b) => {
+          const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+          const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+          return dateB.getTime() - dateA.getTime();
+        });
+      setDailyTransactions(filtered);
+      return;
+    }
+
+    // Archive Date: Query firestore directly for the selected date range
+    const startOfDay = new Date(selectedDailyDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(selectedDailyDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const txRef = collection(db, 'users', userId, 'transactions');
+    const q = query(
+      txRef,
+      orderBy('date', 'desc'),
+      where('date', '>=', startOfDay),
+      where('date', '<=', endOfDay)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: Transaction[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        list.push({
+          ...data,
+          id: docSnap.id,
+          date: data.date?.toDate ? data.date.toDate() : new Date(data.date),
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date()),
+        } as Transaction);
+      });
+      setDailyTransactions(list);
+    }, (error) => {
+      console.warn("Firestore error syncing daily archive transactions:", error);
+    });
+
+    return () => unsubscribe();
+  }, [userId, selectedDailyDate, transactions, isOfflineFallback]);
 
  // 4. Sync Reminders collection
  useEffect(() => {
@@ -1275,6 +1354,7 @@ export function useLedger(userId: string | undefined) {
     customers,
     trashCustomers,
     transactions: transactions.filter(t => customers.some(c => c.id === t.customerId)),
+    dailyTransactions: dailyTransactions.filter(t => customers.some(c => c.id === t.customerId)),
     reminders: reminders.filter(r => customers.some(c => c.id === r.customerId)),
     settings,
     loading,

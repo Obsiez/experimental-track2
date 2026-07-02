@@ -196,10 +196,13 @@ export default function App() {
  return () => unsubscribe();
  }, []);
 
+  const [selectedDailyDate, setSelectedDailyDate] = useState<Date>(new Date());
+
  // Hook for full database state & synced offline storage
  const {
  customers,
  transactions,
+ dailyTransactions,
  reminders,
  settings,
  loading: ledgerLoading,
@@ -222,17 +225,11 @@ export default function App() {
  importLedgerData,
  hasMoreTxs,
  loadMoreTransactions
- } = useLedger(user?.uid);
+ } = useLedger(user?.uid, selectedDailyDate);
 
-  const [selectedDailyDate, setSelectedDailyDate] = useState<Date>(new Date());
   const dateInputRef = React.useRef<HTMLInputElement>(null);
 
-  const todayTransactions = useMemo(() => {
-    const filterDateStr = selectedDailyDate.toDateString();
-    return transactions
-      .filter(tx => parseFirestoreDate(tx.date).toDateString() === filterDateStr)
-      .sort((a, b) => parseFirestoreDate(b.date).getTime() - parseFirestoreDate(a.date).getTime());
-  }, [transactions, selectedDailyDate]);
+  const todayTransactions = dailyTransactions;
 
  // End-of-Day Cash Summary Notification
  useEffect(() => {

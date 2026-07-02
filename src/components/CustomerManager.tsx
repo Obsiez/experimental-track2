@@ -1416,9 +1416,9 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  </div>
  ))}
 
-  {selectedCustomerTransactions.length > 5 && (
+  {selectedCustomerTransactions.length > 0 && (
     <div className="p-4 text-center flex justify-center gap-3">
-      {(ledgerLimit < selectedCustomerTransactions.length || (selectedCustomerTransactions.length % 150 === 0 && hasMoreTxs)) && (
+      {(ledgerLimit < selectedCustomerTransactions.length || hasMoreTxs) && (
         <button 
           type="button"
           onClick={() => {
