@@ -364,6 +364,11 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
    // Handle history for modals (mobile back gesture)
   React.useEffect(() => {
     const handlePopState = () => {
+      // Close edit mode first (one back press = exit edit)
+      if (isEditingCustomer) {
+        setIsEditingCustomer(false);
+        return;
+      }
       if (editingTx || deletingTx || deletingCustomer || duplicateTxWarning) {
         setEditingTx(null);
         setDeletingTx(null);
@@ -373,7 +378,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [editingTx, deletingTx, deletingCustomer, duplicateTxWarning]);
+  }, [isEditingCustomer, editingTx, deletingTx, deletingCustomer, duplicateTxWarning]);
 
   // Smooth scroll and highlight effect for target transaction
   React.useEffect(() => {
@@ -474,10 +479,12 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
         return a.outstandingDue - b.outstandingDue;
       }
       
-      // Default: 'recent'
-      const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return bDate - aDate;
+      // Default: 'recent' — last activity (payment, due, profile edit)
+      const getRecency = (c: typeof a) => {
+        const d = c.updatedAt ?? c.createdAt;
+        return d ? new Date(d).getTime() : 0;
+      };
+      return getRecency(b) - getRecency(a);
     });
 
     return filtered;
@@ -626,7 +633,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  id="add_customer_btn"
  >
  <UserPlus className="w-5 h-5" />
- + {t.createAccount}
+ {t.createAccount}
  </button>
  </div>
 
@@ -634,14 +641,12 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  <AnimatePresence>
  {showAddForm && (
  <motion.form 
- initial={{ opacity: 0, height: 0 }}
- animate={{ opacity: 1, height: 'auto' }}
- exit={{ opacity: 0, height: 0 }}
- transition={{ duration: 0.2, ease: "easeInOut" }}
+ initial={{ opacity: 0, scale: 0.95 }}
+ animate={{ opacity: 1, scale: 1 }}
+ exit={{ opacity: 0, scale: 0.95 }}
  onSubmit={handleCreateCustomer}
- className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-md overflow-hidden"
+ className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-md space-y-4"
  >
- <div className="p-5 space-y-4">
  <div className="text-base font-bold text-zinc-800 dark:text-white">{t.newAccountDetails}</div>
  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
  <div className="space-y-1">
@@ -699,7 +704,6 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  t.saveAndOpen
  )}
  </button>
- </div>
  </div>
  </motion.form>
  )}
@@ -946,6 +950,9 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
           setEditName(selectedCustomer.name);
           setEditPhone(selectedCustomer.phone || '');
           setEditError('');
+          // Replace (not push) so edit mode doesn't stack an extra history entry.
+          // Back gesture from edit mode will land directly on the clients list.
+          window.history.replaceState({ tab: 'customers', customerId: selectedCustomer.id, modal: 'editingCustomer', quickEntry: false }, '', `?tab=customers&c=${selectedCustomer.id}`);
           setIsEditingCustomer(true);
         }}
         className="p-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-755 text-zinc-655 border border-zinc-200 dark:border-zinc-700 rounded-full transition-all cursor-pointer flex items-center justify-center shadow-md"
@@ -977,7 +984,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  {lang === 'bn' ? 'মোবাইল নম্বর' : 'Mobile Number'}
  </label>
  <input
-      type="number"
+      type="tel"
       id="edit_customer_phone"
       value={editPhone}
  onChange={(e) => setEditPhone(e.target.value)}
@@ -1620,11 +1627,15 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
             onClick={() => {
               const targetCustomer = phoneWarningCustomer;
               
-              // Instead of calling window.history.back() which triggers popstate and resets state,
-              // we replace the current warning modal history state with the customer's detail state!
+              // Replace the phoneWarningCustomer history state with customer detail state,
+              // then push a new state for edit mode so one back press exits edit,
+              // and a second back press returns to the customer list.
               if (window.history.state?.modal === 'phoneWarningCustomer') {
                 window.history.replaceState({ tab: 'customers', customerId: targetCustomer.id, quickEntry: false }, '', `?tab=customers&c=${targetCustomer.id}`);
               }
+              // Replace (not push) so edit mode doesn't stack an extra history entry on top of customer detail.
+              // Back gesture from edit mode will land directly on the clients list.
+              window.history.replaceState({ tab: 'customers', customerId: targetCustomer.id, modal: 'editingCustomer', quickEntry: false }, '', `?tab=customers&c=${targetCustomer.id}`);
               
               setSelectedCustomerId(targetCustomer.id);
               setPhoneWarningCustomer(null);

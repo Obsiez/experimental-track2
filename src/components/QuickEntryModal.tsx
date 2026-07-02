@@ -311,7 +311,7 @@ export default function QuickEntryModal({
   ) : (
  <>
  <UserPlus className="w-4 h-4" />
- + {lang === 'bn' ? 'নতুন গ্রাহক যোগ' : 'Add New Customer'}
+ {lang === 'bn' ? 'নতুন গ্রাহক যোগ' : 'Add New Customer'}
  </>
  )}
  </button>
