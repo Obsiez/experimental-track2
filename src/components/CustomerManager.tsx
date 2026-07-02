@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Customer, Transaction } from '../types';
 import { 
   Users, Search, UserPlus, Phone, ArrowUpRight, ArrowDownLeft, Trash2, 
-  X, MessageSquare, Send, ReceiptText, ArrowLeft, Pencil, ChevronDown, ChevronUp, AlertTriangle, ArrowUpDown, Pin } from 'lucide-react';
+  X, MessageSquare, Send, ReceiptText, ArrowLeft, Pencil, ChevronDown, ChevronUp, AlertTriangle, ArrowUpDown, Pin, Check } from 'lucide-react';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import { translations, formatNumber, formatIndianNumberString, Language } from '../lib/translations';
 import { triggerHaptic } from '../lib/haptics';
@@ -267,22 +267,23 @@ export default function CustomerManager({
   const [pinActionCustomer, setPinActionCustomer] = useState<Customer | null>(null);
   const [sortBy, setSortBy] = useState<'recent' | 'high_balance' | 'low_balance'>('recent');
   const [isSortOpen, setIsSortOpen] = useState(false);
-  const [pinnedCustomerIds, setPinnedCustomerIds] = useState<string[]>(() => {
+  const [pinnedCustomerNames, setPinnedCustomerNames] = useState<string[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem('pinned_customers') || '[]');
+      const storedNames = localStorage.getItem('pinned_customers_names');
+      if (storedNames) return JSON.parse(storedNames);
+      return [];
     } catch (e) {
       return [];
     }
   });
 
-  const longPressTimer = React.useRef<any>(null);
-  const isLongPressActive = React.useRef(false);
-
   const togglePinCustomer = (id: string) => {
+    const customer = customers.find(c => c.id === id);
+    if (!customer) return;
     triggerHaptic('single');
-    setPinnedCustomerIds(prev => {
-      const updated = prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id];
-      localStorage.setItem('pinned_customers', JSON.stringify(updated));
+    setPinnedCustomerNames(prev => {
+      const updated = prev.includes(customer.name) ? prev.filter(name => name !== customer.name) : [...prev, customer.name];
+      localStorage.setItem('pinned_customers_names', JSON.stringify(updated));
       return updated;
     });
   };
@@ -306,6 +307,32 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
     setDuplicateTxWarning(null);
     setHasShownDuplicateWarning(false);
   }, [openActionType]);
+
+  React.useEffect(() => {
+    try {
+      const oldIdsStr = localStorage.getItem('pinned_customers');
+      if (oldIdsStr && customers.length > 0) {
+        const oldIds = JSON.parse(oldIdsStr) as string[];
+        if (oldIds.length > 0) {
+          const namesToPin: string[] = [];
+          oldIds.forEach(id => {
+            const c = customers.find(cust => cust.id === id);
+            if (c) namesToPin.push(c.name);
+          });
+          if (namesToPin.length > 0) {
+            setPinnedCustomerNames(prev => {
+              const updated = Array.from(new Set([...prev, ...namesToPin]));
+              localStorage.setItem('pinned_customers_names', JSON.stringify(updated));
+              return updated;
+            });
+          }
+          localStorage.removeItem('pinned_customers');
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [customers]);
 
   // Disable background scrolling when any modal popup is active
   React.useEffect(() => {
@@ -394,27 +421,52 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  };
 
 
- // Filter customers list
- const filteredCustomers = useMemo(() => {
- return customers.filter(c => {
- // Basic query match
- const queryMatch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
- c.phone.includes(searchQuery);
- if (!queryMatch) return false;
+  // Filter & sort customers list (with name-based pinning)
+  const filteredCustomers = useMemo(() => {
+    // 1. Filter customers
+    const filtered = customers.filter(c => {
+      // Basic query match
+      const queryMatch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         c.phone.includes(searchQuery);
+      if (!queryMatch) return false;
 
- // Filter status categories
- if (filterStatus === 'due') {
- return c.outstandingDue > 0;
- }
- if (filterStatus === 'settled') {
- return c.outstandingDue === 0;
- }
- if (filterStatus === 'overpaid') {
- return c.outstandingDue < 0;
- }
- return true;
- });
- }, [customers, searchQuery, filterStatus]);
+      // Filter status categories
+      if (filterStatus === 'due') {
+        return c.outstandingDue > 0;
+      }
+      if (filterStatus === 'settled') {
+        return c.outstandingDue === 0;
+      }
+      if (filterStatus === 'overpaid') {
+        return c.outstandingDue < 0;
+      }
+      return true;
+    });
+
+    // 2. Sort customers
+    filtered.sort((a, b) => {
+      // Pinning has highest priority
+      const aPinned = pinnedCustomerNames.includes(a.name);
+      const bPinned = pinnedCustomerNames.includes(b.name);
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+
+      // Within same pinning status, sort by option
+      if (sortBy === 'high_balance') {
+        return b.outstandingDue - a.outstandingDue;
+      }
+      if (sortBy === 'low_balance') {
+        return a.outstandingDue - b.outstandingDue;
+      }
+      
+      // Default: 'recent'
+      const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bDate - aDate;
+    });
+
+    return filtered;
+  }, [customers, searchQuery, filterStatus, sortBy, pinnedCustomerNames]);
 
  // Selected customer object & transactions
  const selectedCustomer = useMemo(() => {
@@ -651,16 +703,64 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  </div>
 
  {/* Filter Tabs & Sticky Sort Dropdown */}
-  <div className="flex items-center gap-2 mb-3 relative select-none">
-    {/* Always visible Sort Button on the left */}
-    <div className="relative shrink-0">
+  <div className="flex items-center justify-between gap-2 mb-3 relative select-none z-10">
+    {/* Scrollable Filter Tabs wrapper */}
+    <div className="flex items-center gap-2 overflow-x-auto pb-[6px] text-xs no-scrollbar flex-1">
+      <button
+        type="button"
+        onClick={() => { triggerHaptic('single'); setFilterStatus('all'); }}
+        className={`px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] transition-colors shrink-0 cursor-pointer ${
+          filterStatus === 'all'
+            ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm border border-zinc-900 dark:border-white'
+            : 'bg-white text-zinc-650 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+        }`}
+      >
+        {lang === 'bn' ? 'সব গ্রাহক' : 'All'} ({formatNumber(customers.length, lang)})
+      </button>
+      <button
+        type="button"
+        onClick={() => { triggerHaptic('single'); setFilterStatus('due'); }}
+        className={`px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] transition-colors shrink-0 cursor-pointer ${
+          filterStatus === 'due'
+            ? 'bg-rose-600 text-white shadow-sm border border-rose-600'
+            : 'bg-white text-rose-600 border border-rose-200 dark:bg-zinc-900 dark:border-rose-500/30 dark:text-rose-400 hover:bg-rose-50/30 dark:hover:bg-rose-950/10'
+        }`}
+      >
+        {lang === 'bn' ? 'বকেয়া খতিয়ান' : 'Has Outstanding'} ({formatNumber(customers.filter(c => c.outstandingDue > 0).length, lang)})
+      </button>
+      <button
+        type="button"
+        onClick={() => { triggerHaptic('single'); setFilterStatus('settled'); }}
+        className={`px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] transition-colors shrink-0 cursor-pointer ${
+          filterStatus === 'settled'
+            ? 'bg-emerald-600 text-white shadow-sm border border-emerald-600'
+            : 'bg-white text-emerald-600 border border-emerald-200 dark:bg-zinc-900 dark:border-emerald-500/30 dark:text-emerald-400 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/10'
+        }`}
+      >
+        {lang === 'bn' ? 'পরিশোধিত/০ টাকা' : 'Settled (৳0)'} ({formatNumber(customers.filter(c => c.outstandingDue === 0).length, lang)})
+      </button>
+      <button
+        type="button"
+        onClick={() => { triggerHaptic('single'); setFilterStatus('overpaid'); }}
+        className={`px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] transition-colors shrink-0 cursor-pointer ${
+          filterStatus === 'overpaid'
+            ? 'bg-cyan-600 text-white shadow-sm border border-cyan-600'
+            : 'bg-white text-cyan-600 border border-cyan-200 dark:bg-zinc-900 dark:border-cyan-500/30 dark:text-cyan-400 hover:bg-cyan-50/30 dark:hover:bg-cyan-950/10'
+        }`}
+      >
+        {lang === 'bn' ? 'অতিরিক্ত জমা' : 'Overpaid'} ({formatNumber(customers.filter(c => c.outstandingDue < 0).length, lang)})
+      </button>
+    </div>
+
+    {/* Sort Button (always visible on the right, aligned perfectly) */}
+    <div className="relative shrink-0 pb-1">
       <button
         type="button"
         onClick={() => {
           triggerHaptic('single');
           setIsSortOpen(!isSortOpen);
         }}
-        className="px-3.5 py-2.5 rounded-xl font-extrabold border border-zinc-200 dark:border-zinc-800 bg-zinc-50 hover:bg-zinc-150 dark:bg-zinc-800 dark:hover:bg-zinc-755 text-zinc-700 dark:text-zinc-300 flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+        className="px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] border border-zinc-200 dark:border-zinc-800 bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
       >
         <ArrowUpDown className="w-3.5 h-3.5" />
         <span>{lang === 'bn' ? 'সাজান' : 'Sort'}</span>
@@ -673,91 +773,32 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
             className="fixed inset-0 z-40" 
             onClick={() => setIsSortOpen(false)} 
           />
-          <div className="absolute left-0 mt-1.5 w-44 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in slide-in-from-top-1 duration-100">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('single');
-                setSortBy('recent');
-                setIsSortOpen(false);
-              }}
-              className="w-full text-left px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-            >
-              {lang === 'bn' ? 'সাম্প্রতিক (Recent)' : 'Recent'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('single');
-                setSortBy('high_balance');
-                setIsSortOpen(false);
-              }}
-              className="w-full text-left px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-            >
-              {lang === 'bn' ? 'বেশি বাকি (High Due)' : 'High Balance'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('single');
-                setSortBy('low_balance');
-                setIsSortOpen(false);
-              }}
-              className="w-full text-left px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-            >
-              {lang === 'bn' ? 'কম বাকি (Low Due)' : 'Low Balance'}
-            </button>
+          <div className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in slide-in-from-top-1 duration-100">
+            {(['recent', 'high_balance', 'low_balance'] as const).map((option) => {
+               const label = option === 'recent'
+                 ? (lang === 'bn' ? 'সাম্প্রতিক (Recent)' : 'Recent')
+                 : option === 'high_balance'
+                   ? (lang === 'bn' ? 'বেশি বাকি (High Due)' : 'High Balance')
+                   : (lang === 'bn' ? 'কম বাকি (Low Due)' : 'Low Balance');
+               return (
+                 <button
+                   key={option}
+                   type="button"
+                   onClick={() => {
+                     triggerHaptic('single');
+                     setSortBy(option);
+                     setIsSortOpen(false);
+                   }}
+                   className="w-full flex items-center justify-between px-3.5 py-2.5 text-[13px] font-black transition-colors cursor-pointer text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                 >
+                   <span>{label}</span>
+                   {sortBy === option && <Check className="w-4 h-4 text-emerald-500 shrink-0" />}
+                 </button>
+               );
+            })}
           </div>
         </>
       )}
-    </div>
-
-    {/* Scrollable Filter Tabs wrapper */}
-    <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar flex-1">
-      <button
-        type="button"
-        onClick={() => { triggerHaptic('single'); setFilterStatus('all'); }}
-        className={`px-4 py-2.5 rounded-xl font-bold transition-colors shrink-0 cursor-pointer ${
-          filterStatus === 'all'
-            ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md'
-            : 'bg-white text-zinc-655 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800'
-        }`}
-      >
-        {lang === 'bn' ? 'সব গ্রাহক' : 'All'} ({formatNumber(customers.length, lang)})
-      </button>
-      <button
-        type="button"
-        onClick={() => { triggerHaptic('single'); setFilterStatus('due'); }}
-        className={`px-4 py-2.5 rounded-xl font-bold transition-colors shrink-0 cursor-pointer ${
-          filterStatus === 'due'
-            ? 'bg-rose-600 text-white shadow-md'
-            : 'bg-white text-rose-600 border border-rose-200 dark:bg-zinc-900 dark:border-rose-950/40 dark:text-rose-400'
-        }`}
-      >
-        {lang === 'bn' ? 'বকেয়া খতিয়ান' : 'Has Outstanding'} ({formatNumber(customers.filter(c => c.outstandingDue > 0).length, lang)})
-      </button>
-      <button
-        type="button"
-        onClick={() => { triggerHaptic('single'); setFilterStatus('settled'); }}
-        className={`px-4 py-2.5 rounded-xl font-bold transition-colors shrink-0 cursor-pointer ${
-          filterStatus === 'settled'
-            ? 'bg-emerald-600 text-white shadow-md'
-            : 'bg-white text-emerald-650 border border-emerald-500 dark:bg-zinc-900 dark:border-emerald-950/40 dark:text-emerald-400'
-        }`}
-      >
-        {lang === 'bn' ? 'পরিশোধিত/০ টাকা' : 'Settled (৳0)'} ({formatNumber(customers.filter(c => c.outstandingDue === 0).length, lang)})
-      </button>
-      <button
-        type="button"
-        onClick={() => { triggerHaptic('single'); setFilterStatus('overpaid'); }}
-        className={`px-4 py-2.5 rounded-xl font-bold transition-colors shrink-0 cursor-pointer ${
-          filterStatus === 'overpaid'
-            ? 'bg-cyan-600 text-white shadow-md'
-            : 'bg-white text-cyan-650 border border-cyan-500 dark:bg-zinc-900 dark:border-cyan-950/40 dark:text-cyan-400'
-        }`}
-      >
-        {lang === 'bn' ? 'অতিরিক্ত জমা' : 'Overpaid'} ({formatNumber(customers.filter(c => c.outstandingDue < 0).length, lang)})
-      </button>
     </div>
   </div>
 
@@ -785,43 +826,10 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 				triggerHaptic('double');
 				handleDelete(c);
 			}}
+			onClick={() => {}}
 		>
 			<div
-				onTouchStart={() => {
-					isLongPressActive.current = false;
-					longPressTimer.current = setTimeout(() => {
-						isLongPressActive.current = true;
-						triggerHaptic('double');
-						window.history.pushState({ modal: 'pinActionCustomer' }, '');
-						setPinActionCustomer(c);
-					}, 600);
-				}}
-				onTouchEnd={() => {
-					if (longPressTimer.current) clearTimeout(longPressTimer.current);
-				}}
-				onTouchMove={() => {
-					if (longPressTimer.current) clearTimeout(longPressTimer.current);
-				}}
-				onMouseDown={() => {
-					isLongPressActive.current = false;
-					longPressTimer.current = setTimeout(() => {
-						isLongPressActive.current = true;
-						triggerHaptic('double');
-						window.history.pushState({ modal: 'pinActionCustomer' }, '');
-						setPinActionCustomer(c);
-					}, 600);
-				}}
-				onMouseUp={() => {
-					if (longPressTimer.current) clearTimeout(longPressTimer.current);
-				}}
-				onMouseLeave={() => {
-					if (longPressTimer.current) clearTimeout(longPressTimer.current);
-				}}
 				onClick={() => {
-					if (isLongPressActive.current) {
-						isLongPressActive.current = false;
-						return;
-					}
 					setSelectedCustomerId(selectedCustomerId === c.id ? null : c.id);
 				}}
 				className={`bg-white dark:bg-zinc-900 border p-5 rounded-2xl shadow-md hover:shadow-md transition-all cursor-pointer flex items-center justify-between group ${
@@ -831,8 +839,17 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 				}`}
 			>
 				<div className="min-w-0 pr-2">
-					<div className="text-lg font-bold text-zinc-800 dark:text-zinc-100 truncate group-hover:text-emerald-600 transition-colors flex items-center gap-1.5">
-						{pinnedCustomerIds.includes(c.id) && (
+					<div 
+						onClick={(e) => {
+							e.stopPropagation();
+							triggerHaptic('double');
+							window.history.pushState({ modal: 'pinActionCustomer' }, '');
+							setPinActionCustomer(c);
+						}}
+						className="text-lg font-bold text-zinc-800 dark:text-zinc-100 truncate group-hover:text-emerald-600 transition-colors flex items-center gap-1.5 cursor-pointer hover:underline decoration-emerald-500/40 decoration-2 underline-offset-2"
+						title={lang === 'bn' ? 'পিন করার অপশন' : 'Pinning Options'}
+					>
+						{pinnedCustomerNames.includes(c.name) && (
 							<Pin className="w-3.5 h-3.5 text-amber-500 fill-amber-500 rotate-45 shrink-0" />
 						)}
 						<span className="truncate">{c.name}</span>
@@ -904,9 +921,9 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
         type="button"
         onClick={() => togglePinCustomer(selectedCustomer.id)}
         className="p-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-755 text-zinc-655 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 rounded-full transition-all cursor-pointer flex items-center justify-center shadow-md animate-in fade-in"
-        title={pinnedCustomerIds.includes(selectedCustomer.id) ? (lang === 'bn' ? 'আনপিন করুন' : 'Unpin Customer') : (lang === 'bn' ? 'পিন করুন' : 'Pin Customer')}
+        title={pinnedCustomerNames.includes(selectedCustomer.name) ? (lang === 'bn' ? 'আনপিন করুন' : 'Unpin Customer') : (lang === 'bn' ? 'পিন করুন' : 'Pin Customer')}
       >
-        <Pin className={`w-4 h-4 ${pinnedCustomerIds.includes(selectedCustomer.id) ? 'text-amber-500 fill-amber-500 rotate-45' : 'text-zinc-500 dark:text-zinc-400'}`} />
+        <Pin className={`w-4 h-4 ${pinnedCustomerNames.includes(selectedCustomer.name) ? 'text-amber-500 fill-amber-500 rotate-45' : 'text-zinc-500 dark:text-zinc-400'}`} />
       </button>
       <button
         type="button"
@@ -1637,15 +1654,15 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
       >
         <div className="text-center mb-6">
           <div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Pin className={`w-8 h-8 text-amber-500 ${pinnedCustomerIds.includes(pinActionCustomer.id) ? 'rotate-45 fill-amber-500' : ''}`} />
+            <Pin className={`w-8 h-8 text-amber-500 ${pinnedCustomerNames.includes(pinActionCustomer.name) ? 'rotate-45 fill-amber-500' : ''}`} />
           </div>
           <h3 className="text-lg font-black text-zinc-900 dark:text-white mb-2">
-            {pinnedCustomerIds.includes(pinActionCustomer.id) 
+            {pinnedCustomerNames.includes(pinActionCustomer.name) 
               ? (lang === 'bn' ? 'গ্রাহক আনপিন করুন' : 'Unpin Customer') 
               : (lang === 'bn' ? 'গ্রাহক পিন করুন' : 'Pin Customer')}
           </h3>
           <p className="text-sm text-zinc-500 dark:text-zinc-400 font-semibold leading-relaxed">
-            {pinnedCustomerIds.includes(pinActionCustomer.id)
+            {pinnedCustomerNames.includes(pinActionCustomer.name)
               ? (lang === 'bn' 
                   ? `আপনি কি নিশ্চিত ${pinActionCustomer.name}-কে তালিকা থেকে আনপিন করতে চান?` 
                   : `Are you sure you want to unpin ${pinActionCustomer.name} from the top?`)
@@ -1667,7 +1684,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
             }}
             className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer transition-colors"
           >
-            {pinnedCustomerIds.includes(pinActionCustomer.id)
+            {pinnedCustomerNames.includes(pinActionCustomer.name)
               ? (lang === 'bn' ? 'হ্যাঁ, আনপিন করুন' : 'Yes, Unpin')
               : (lang === 'bn' ? 'হ্যাঁ, পিন করুন' : 'Yes, Pin to top')}
           </button>

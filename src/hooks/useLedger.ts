@@ -959,8 +959,8 @@ export function useLedger(userId: string | undefined) {
 
       // Create transactions from backup
       for (const bt of backupData.ledgerTransactions) {
-        if (!bt.customer) continue;
-        const customerNameLower = bt.customer.trim().toLowerCase();
+        const cName = bt.customer || (bt as any).customerName; if (!cName) continue;
+        const customerNameLower = cName.trim().toLowerCase();
         let matchedCustomer = customerMap.get(customerNameLower);
         
         // If the customer isn't in the customer list for some reason, create them
@@ -969,7 +969,7 @@ export function useLedger(userId: string | undefined) {
           const customerObj: Customer = {
             id: customId,
             userId,
-            name: bt.customer.trim(),
+            name: cName.trim(),
             phone: '',
             outstandingDue: 0,
             createdAt: new Date(),
@@ -985,7 +985,7 @@ export function useLedger(userId: string | undefined) {
               data: {
                 id: customId,
                 userId,
-                name: bt.customer.trim(),
+                name: cName.trim(),
                 phone: '',
                 outstandingDue: 0,
                 createdAt: new Date(),
@@ -1007,7 +1007,7 @@ export function useLedger(userId: string | undefined) {
           amount: bt.amount,
           description: (bt.description || '').trim(),
           date: txDate,
-          createdAt: new Date()
+          createdAt: txDate
         };
         newTransactions.push(txObj);
 
@@ -1023,7 +1023,7 @@ export function useLedger(userId: string | undefined) {
               amount: bt.amount,
               description: (bt.description || '').trim(),
               date: txDate,
-              createdAt: new Date()
+              createdAt: txDate
             },
             type: 'set'
           });
@@ -1096,8 +1096,8 @@ export function useLedger(userId: string | undefined) {
 
       // 2. Process transactions
       for (const bt of backupData.ledgerTransactions) {
-        if (!bt.customer) continue;
-        const key = bt.customer.trim().toLowerCase();
+        const cName = bt.customer || (bt as any).customerName; if (!cName) continue;
+        const key = cName.trim().toLowerCase();
         let matchedCustomer = customerMap.get(key);
 
         // If customer doesn't exist (can happen if transactions contains entries for someone not in customers list)
@@ -1106,7 +1106,7 @@ export function useLedger(userId: string | undefined) {
           const customerObj: Customer = {
             id: customId,
             userId,
-            name: bt.customer.trim(),
+            name: cName.trim(),
             phone: '',
             outstandingDue: 0,
             createdAt: new Date(),
@@ -1122,7 +1122,7 @@ export function useLedger(userId: string | undefined) {
               data: {
                 id: customId,
                 userId,
-                name: bt.customer.trim(),
+                name: cName.trim(),
                 phone: '',
                 outstandingDue: 0,
                 createdAt: new Date(),
@@ -1157,7 +1157,7 @@ export function useLedger(userId: string | undefined) {
             amount: bt.amount,
             description: (bt.description || '').trim(),
             date: txDate,
-            createdAt: new Date()
+            createdAt: txDate
           };
           newTransactions.push(txObj);
 
@@ -1173,7 +1173,7 @@ export function useLedger(userId: string | undefined) {
                 amount: bt.amount,
                 description: (bt.description || '').trim(),
                 date: txDate,
-                createdAt: new Date()
+                createdAt: txDate
               },
               type: 'set'
             });

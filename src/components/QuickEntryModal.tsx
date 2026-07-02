@@ -3,6 +3,7 @@ import { Customer, Transaction } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, UserPlus, Check, ArrowDownLeft, ArrowUpRight, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { translations, formatNumber, formatIndianNumberString, Language } from '../lib/translations';
+import { triggerHaptic } from '../lib/haptics';
 import { toast } from 'sonner';
 
 interface QuickEntryModalProps {
@@ -436,7 +437,8 @@ export default function QuickEntryModal({
               )}
 
  {type === 'payment' && currentCustomer && (currentCustomer as any).outstandingDue > 0 && (
-    <div 
+    <button 
+       type="button"
        onClick={() => {
          triggerHaptic('single');
          const targetDue = (currentCustomer as any).outstandingDue;
@@ -458,7 +460,7 @@ export default function QuickEntryModal({
        <span className="text-xs font-bold text-zinc-650 dark:text-zinc-200 select-none font-bold">
          {lang === 'bn' ? 'সম্পূর্ণ বকেয়া পরিশোধ করুন' : 'Settle complete due'} (৳{formatNumber((currentCustomer as any).outstandingDue, lang)})
        </span>
-     </div>
+     </button>
   )}
 
  {/* Speedy Pad helpers */}
