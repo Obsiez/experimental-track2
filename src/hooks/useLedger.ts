@@ -207,7 +207,7 @@ export function useLedger(userId: string | undefined) {
  }
 
  const customersRef = collection(db, 'users', userId, 'customers');
- const q = query(customersRef, orderBy('updatedAt', 'desc'));
+ const q = query(customersRef, orderBy('createdAt', 'desc'));
 
  const storedCustomers = localStorage.getItem(`easy_due_customers_${userId}`);
  if (!storedCustomers || JSON.parse(storedCustomers).length === 0) {

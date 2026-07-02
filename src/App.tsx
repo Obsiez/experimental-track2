@@ -816,7 +816,7 @@ updateSettings={updateSettings}
                           {tx.customerName}
                         </div>
                         <div className="text-sm sm:text-[15px] text-zinc-550 dark:text-zinc-400 truncate mt-0.5" title={tx.description}>
-                          {tx.description || (tx.type === 'due' ? (lang === 'bn' ? 'বকেয়া' : 'Due') : (lang === 'bn' ? 'জমা' : 'Payment'))}
+                          {tx.description || (tx.type === 'due' ? t.dueTrigger : t.paymentTrigger)}
                         </div>
                       </div>
                     </div>
