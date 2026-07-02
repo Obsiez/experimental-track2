@@ -699,10 +699,7 @@ updateSettings={updateSettings}
                 <ArrowLeft className="w-5 h-5 text-zinc-650 dark:text-zinc-350" />
               </button>
               <div>
-                <h2 className="text-lg font-black text-zinc-900 dark:text-white tracking-tight leading-tight">
-                  {lang === 'bn' ? 'দৈনিক লেনদেন খাতা' : 'Daily Journal Ledger'}
-                </h2>
-                <p className="text-3xs text-zinc-500 dark:text-zinc-400 font-semibold mt-0.5">
+                <p className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white">
                   {selectedDailyDate.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                 </p>
               </div>

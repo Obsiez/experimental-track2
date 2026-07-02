@@ -258,8 +258,23 @@ export default function CustomerManager({
  const [editError, setEditError] = useState('');
  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
- // Selected message template for reminder alerts
- const [selectedTemplate, setSelectedTemplate] = useState<1 | 2 | 3>(1);
+  // Selected message template for reminder alerts
+  const [selectedTemplate, setSelectedTemplate] = useState<1 | 2 | 3>(() => {
+    try {
+      const stored = localStorage.getItem('selected_reminder_template');
+      if (stored) {
+        const val = Number(stored);
+        if (val === 1 || val === 2 || val === 3) return val as 1 | 2 | 3;
+      }
+      return 1;
+    } catch (e) {
+      return 1;
+    }
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('selected_reminder_template', String(selectedTemplate));
+  }, [selectedTemplate]);
 
  // Transaction Edit/Delete Modal states
  
@@ -705,11 +720,11 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  {/* Filter Tabs & Sticky Sort Dropdown */}
   <div className="flex items-center justify-between gap-2 mb-3 relative select-none z-10">
     {/* Scrollable Filter Tabs wrapper */}
-    <div className="flex items-center gap-2 overflow-x-auto pb-[6px] text-xs no-scrollbar flex-1">
+    <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar flex-1">
       <button
         type="button"
         onClick={() => { triggerHaptic('single'); setFilterStatus('all'); }}
-        className={`px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] transition-colors shrink-0 cursor-pointer ${
+        className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-colors shrink-0 cursor-pointer ${
           filterStatus === 'all'
             ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm border border-zinc-900 dark:border-white'
             : 'bg-white text-zinc-650 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
@@ -720,7 +735,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
       <button
         type="button"
         onClick={() => { triggerHaptic('single'); setFilterStatus('due'); }}
-        className={`px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] transition-colors shrink-0 cursor-pointer ${
+        className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-colors shrink-0 cursor-pointer ${
           filterStatus === 'due'
             ? 'bg-rose-600 text-white shadow-sm border border-rose-600'
             : 'bg-white text-rose-600 border border-rose-200 dark:bg-zinc-900 dark:border-rose-500/30 dark:text-rose-400 hover:bg-rose-50/30 dark:hover:bg-rose-950/10'
@@ -731,7 +746,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
       <button
         type="button"
         onClick={() => { triggerHaptic('single'); setFilterStatus('settled'); }}
-        className={`px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] transition-colors shrink-0 cursor-pointer ${
+        className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-colors shrink-0 cursor-pointer ${
           filterStatus === 'settled'
             ? 'bg-emerald-600 text-white shadow-sm border border-emerald-600'
             : 'bg-white text-emerald-600 border border-emerald-200 dark:bg-zinc-900 dark:border-emerald-500/30 dark:text-emerald-400 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/10'
@@ -742,7 +757,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
       <button
         type="button"
         onClick={() => { triggerHaptic('single'); setFilterStatus('overpaid'); }}
-        className={`px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] transition-colors shrink-0 cursor-pointer ${
+        className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-colors shrink-0 cursor-pointer ${
           filterStatus === 'overpaid'
             ? 'bg-cyan-600 text-white shadow-sm border border-cyan-600'
             : 'bg-white text-cyan-600 border border-cyan-200 dark:bg-zinc-900 dark:border-cyan-500/30 dark:text-cyan-400 hover:bg-cyan-50/30 dark:hover:bg-cyan-950/10'
@@ -760,7 +775,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
           triggerHaptic('single');
           setIsSortOpen(!isSortOpen);
         }}
-        className="px-3.5 pt-2 pb-[10px] rounded-xl font-bold text-[13px] border border-zinc-200 dark:border-zinc-800 bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+        className="px-3.5 py-2 rounded-xl font-bold text-xs border border-zinc-200 dark:border-zinc-800 bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
       >
         <ArrowUpDown className="w-3.5 h-3.5" />
         <span>{lang === 'bn' ? 'সাজান' : 'Sort'}</span>
