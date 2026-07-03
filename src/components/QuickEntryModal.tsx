@@ -61,16 +61,30 @@ export default function QuickEntryModal({
  const [isSubmitting, setIsSubmitting] = useState(false);
  const [errorMsg, setErrorMsg] = useState('');
 
+ // Frozen snapshot of customer IDs sorted by recency, captured when the modal opens.
+ // Using a frozen order means live updatedAt changes (e.g. from a just-confirmed
+ // transaction) don't rearrange the grid while the modal is still visible.
+ const [frozenCustomerOrder, setFrozenCustomerOrder] = useState<string[]>([]);
+
  // Keep state in sync when preselectedCustomerId or open state changes
  React.useEffect(() => {
  if (isOpen) {
- setSelectedCustomerId(preselectedCustomerId || '');
- setErrorMsg('');
- setAmountInput('');
- setDescription('');
- setSearchQuery('');
- setShowAddNewCustomer(false);
- setShowAllCustomers(false);
+   setSelectedCustomerId(preselectedCustomerId || '');
+   setErrorMsg('');
+   setAmountInput('');
+   setDescription('');
+   setSearchQuery('');
+   setShowAddNewCustomer(false);
+   setShowAllCustomers(false);
+   // Snapshot the current recency-sorted order so it stays stable for this session
+   const sorted = [...customers].sort((a, b) => {
+     const getRecency = (c: Customer) => {
+       const d = c.updatedAt ?? c.createdAt;
+       return d ? new Date(d).getTime() : 0;
+     };
+     return getRecency(b) - getRecency(a);
+   });
+   setFrozenCustomerOrder(sorted.map(c => c.id));
  }
  }, [isOpen, preselectedCustomerId]);
 
@@ -83,10 +97,21 @@ export default function QuickEntryModal({
  return () => { document.body.style.overflow = ''; };
  }, [isOpen]);
 
- // Handle immediate selection
- const filteredCustomers = searchQuery.trim() === '' 
- ? customers 
- : customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+ // Handle customer selection list — order is frozen to the snapshot taken at modal open.
+ // This prevents a just-confirmed customer from visibly jumping to the top mid-session.
+ const filteredCustomers = useMemo(() => {
+   const list = searchQuery.trim() === ''
+     ? customers
+     : customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+   return [...list].sort((a, b) => {
+     const idxA = frozenCustomerOrder.indexOf(a.id);
+     const idxB = frozenCustomerOrder.indexOf(b.id);
+     // Known IDs sort by frozen position; any new ID (added mid-session) goes to the end
+     const posA = idxA === -1 ? Infinity : idxA;
+     const posB = idxB === -1 ? Infinity : idxB;
+     return posA - posB;
+   });
+ }, [customers, searchQuery, frozenCustomerOrder]);
 
  const currentCustomer = customers.find(c => c.id === selectedCustomerId);
 

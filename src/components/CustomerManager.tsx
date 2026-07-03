@@ -366,7 +366,15 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
     const handlePopState = () => {
       // Close edit mode first (one back press = exit edit)
       if (isEditingCustomer) {
+        // Capture scroll position before React re-render to prevent unwanted scroll
+        const savedScrollY = window.scrollY;
         setIsEditingCustomer(false);
+        // Restore scroll position after the DOM settles from the state change
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: savedScrollY, behavior: 'instant' });
+          });
+        });
         return;
       }
       if (editingTx || deletingTx || deletingCustomer || duplicateTxWarning) {
@@ -383,16 +391,22 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   // Smooth scroll and highlight effect for target transaction
   React.useEffect(() => {
     if (highlightedTxId) {
-      const element = document.getElementById(`tx-row-${highlightedTxId}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const timer = setTimeout(() => {
-          if (setHighlightedTxId) {
-            setHighlightedTxId(null);
-          }
-        }, 3000);
-        return () => clearTimeout(timer);
-      }
+      // Delay scroll slightly so DOM settles after navigation (especially needed in PWA standalone mode)
+      const scrollTimer = setTimeout(() => {
+        const element = document.getElementById(`tx-row-${highlightedTxId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 120);
+      const highlightTimer = setTimeout(() => {
+        if (setHighlightedTxId) {
+          setHighlightedTxId(null);
+        }
+      }, 3120);
+      return () => {
+        clearTimeout(scrollTimer);
+        clearTimeout(highlightTimer);
+      };
     }
   }, [highlightedTxId, selectedCustomerId]);
 
