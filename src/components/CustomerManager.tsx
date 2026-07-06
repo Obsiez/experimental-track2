@@ -1512,7 +1512,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  ))}
 
   {(() => {
-    const showMoreVisible = ledgerLimit === 5 && (selectedCustomerTransactions.length > 5 || hasMoreTxs);
+    const showMoreVisible = ledgerLimit === 5 && selectedCustomerTransactions.length > 5;
     const showLessVisible = ledgerLimit > 5;
     if (!showMoreVisible && !showLessVisible) return null;
 
