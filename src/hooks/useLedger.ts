@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
  collection, 
  doc, 
@@ -29,7 +29,7 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
  const [txLimit, setTxLimit] = useState(150);
  const [hasMoreTxs, setHasMoreTxs] = useState(true);
- const [dailyTransactions, setDailyTransactions] = useState<Transaction[]>([]);
+ const [archiveTransactions, setArchiveTransactions] = useState<Transaction[]>([]);
 
   const loadMoreTransactions = () => {
     setTxLimit(prev => prev + 150);
@@ -307,47 +307,18 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
  return () => unsubscribe();
  }, [userId, txLimit]);
 
-  // 3b. Sync Daily Transactions (including archive date support)
+  // 3b. Sync Daily Archive Transactions (only for past dates when online)
   useEffect(() => {
-    if (!userId) return;
-
-    if (userId === 'local-guest-session' || isOfflineFallback) {
-      // Local/offline: filter in-memory transactions
-      if (selectedDailyDate) {
-        const filterDateStr = selectedDailyDate.toDateString();
-        const filtered = transactions
-          .filter(tx => {
-            const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
-            return d.toDateString() === filterDateStr;
-          })
-          .sort((a, b) => {
-            const dateA = a.date instanceof Date ? a.date : new Date(a.date);
-            const dateB = b.date instanceof Date ? b.date : new Date(b.date);
-            return dateB.getTime() - dateA.getTime();
-          });
-        setDailyTransactions(filtered);
-      }
+    if (!userId || userId === 'local-guest-session' || isOfflineFallback || !selectedDailyDate) {
+      setArchiveTransactions([]);
       return;
     }
-
-    if (!selectedDailyDate) return;
 
     const filterDateStr = selectedDailyDate.toDateString();
     const isToday = filterDateStr === new Date().toDateString();
 
     if (isToday) {
-      // Today: use in-memory transactions (real-time stream already loaded)
-      const filtered = transactions
-        .filter(tx => {
-          const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
-          return d.toDateString() === filterDateStr;
-        })
-        .sort((a, b) => {
-          const dateA = a.date instanceof Date ? a.date : new Date(a.date);
-          const dateB = b.date instanceof Date ? b.date : new Date(b.date);
-          return dateB.getTime() - dateA.getTime();
-        });
-      setDailyTransactions(filtered);
+      setArchiveTransactions([]);
       return;
     }
 
@@ -376,13 +347,36 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date()),
         } as Transaction);
       });
-      setDailyTransactions(list);
+      setArchiveTransactions(list);
     }, (error) => {
       console.warn("Firestore error syncing daily archive transactions:", error);
     });
 
     return () => unsubscribe();
-  }, [userId, selectedDailyDate, transactions, isOfflineFallback]);
+  }, [userId, selectedDailyDate, isOfflineFallback]);
+
+  // Compute daily transactions dynamically based on date context
+  const dailyTransactions = useMemo(() => {
+    if (!selectedDailyDate) return [];
+    
+    const filterDateStr = selectedDailyDate.toDateString();
+    const isToday = filterDateStr === new Date().toDateString();
+
+    if (isToday || isOfflineFallback || userId === 'local-guest-session') {
+      return transactions
+        .filter(tx => {
+          const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+          return d.toDateString() === filterDateStr;
+        })
+        .sort((a, b) => {
+          const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+          const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+          return dateB.getTime() - dateA.getTime();
+        });
+    }
+
+    return archiveTransactions;
+  }, [transactions, selectedDailyDate, isOfflineFallback, userId, archiveTransactions]);
 
  // 4. Sync Reminders collection
  useEffect(() => {
