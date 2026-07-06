@@ -52,6 +52,29 @@ export default function SettingsManager({
 
   const [hapticsOn, setHapticsOn] = useState(() => localStorage.getItem('haptics') === 'true');
   const [confirmAction, setConfirmAction] = useState<any>(null);
+
+  const openConfirmAction = (action: any) => {
+    setConfirmAction(action);
+    window.history.pushState({ modal: 'settingsConfirmAction' }, '');
+  };
+
+  const closeConfirmAction = () => {
+    if (window.history.state?.modal === 'settingsConfirmAction') {
+      window.history.back();
+    } else {
+      setConfirmAction(null);
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (confirmAction) {
+        setConfirmAction(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [confirmAction]);
   const [hapticIntensity, setHapticIntensity] = useState(() => 
     parseInt(localStorage.getItem('haptic_intensity') || '3')
   );
@@ -504,7 +527,7 @@ export default function SettingsManager({
 
       {trashCustomers.length > 0 && (
         <button
-          onClick={() => setConfirmAction({ type: 'empty_trash' })}
+          onClick={() => openConfirmAction({ type: 'empty_trash' })}
           className="px-4 py-2 border-2 border-rose-500 hover:bg-rose-500 hover:text-white dark:hover:text-zinc-950 font-bold text-rose-500 rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -557,14 +580,14 @@ export default function SettingsManager({
 
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setConfirmAction({ type: 'restore', customer: c })}
+                    onClick={() => openConfirmAction({ type: 'restore', customer: c })}
                     title={lang === 'bn' ? 'পুনরুদ্ধার করুন' : 'Restore'}
                     className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-650 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 dark:text-emerald-450 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
                   >
                     <RotateCcw className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => setConfirmAction({ type: 'delete_perm', customer: c })}
+                    onClick={() => openConfirmAction({ type: 'delete_perm', customer: c })}
                     title={lang === 'bn' ? 'স্থায়ীভাবে মুছুন' : 'Delete Permanently'}
                     className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-655 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 dark:text-rose-455 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
                   >
@@ -585,8 +608,12 @@ export default function SettingsManager({
 
   {/* Trash Action Confirmation Modal */}
   {confirmAction && (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80">
+    <div 
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80"
+      onClick={closeConfirmAction}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-white dark:bg-zinc-900 w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-2xl p-6"
@@ -666,7 +693,7 @@ export default function SettingsManager({
             onClick={async () => {
               const type = confirmAction.type;
               const customer = confirmAction.customer;
-              setConfirmAction(null);
+              closeConfirmAction();
               
               triggerHaptic('single');
               
@@ -693,7 +720,7 @@ export default function SettingsManager({
           </button>
           
           <button
-            onClick={() => setConfirmAction(null)}
+            onClick={closeConfirmAction}
             className="w-full py-4 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-300 font-bold rounded-xl cursor-pointer"
           >
             {lang === 'bn' ? 'বাতিল' : 'Cancel'}

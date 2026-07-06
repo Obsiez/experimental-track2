@@ -288,7 +288,7 @@ export default function AnalyticsManager({ customers, transactions, lang }: Anal
      </div>
 
      {/* Legend */}
-     <div className="flex items-center gap-5 text-xs font-bold">
+     <div className="flex items-center justify-end gap-5 text-xs font-bold">
       <div className="flex items-center gap-2">
        <span className="w-3 h-3 rounded-sm bg-rose-500 block shrink-0" />
        <span className="text-zinc-600 dark:text-zinc-400">

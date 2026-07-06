@@ -24,6 +24,8 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
  const [reminders, setReminders] = useState<Reminder[]>([]);
  const [settings, setSettings] = useState<UserSettings | null>(null);
  const [loading, setLoading] = useState(true);
+ const [customersSynced, setCustomersSynced] = useState(false);
+ const [transactionsSynced, setTransactionsSynced] = useState(false);
  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
  const [txLimit, setTxLimit] = useState(150);
  const [hasMoreTxs, setHasMoreTxs] = useState(true);
@@ -123,25 +125,51 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
  localStorage.setItem(`easy_due_settings_${userId}`, JSON.stringify(val));
  };
 
- // Load cache immediately on userId change to populate UI with 0ms delay
- useEffect(() => {
- if (userId) {
- loadLocalData();
- // If we already have cached customers, hide initial loader to show dashboard instantly
- const storedCustomers = localStorage.getItem(`easy_due_customers_${userId}`);
- if (storedCustomers && JSON.parse(storedCustomers).length > 0) {
- setLoading(false);
- } else {
- setLoading(true);
- }
- } else {
- setCustomers([]);
- setTransactions([]);
- setReminders([]);
- setSettings(null);
- setLoading(false);
- }
- }, [userId]);
+  // Load cache immediately on userId change to populate UI with 0ms delay, and set up sync timeout
+  useEffect(() => {
+    if (userId) {
+      loadLocalData();
+      
+      // Initialize sync tracking states
+      setCustomersSynced(false);
+      setTransactionsSynced(false);
+      
+      // If we are offline, mark synced immediately to skip waiting
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setCustomersSynced(true);
+        setTransactionsSynced(true);
+        return;
+      }
+      
+      // Max wait time for server sync to complete (prevents long loader for slow internet)
+      const timer = setTimeout(() => {
+        setCustomersSynced(true);
+        setTransactionsSynced(true);
+      }, 900);
+      
+      return () => clearTimeout(timer);
+    } else {
+      setCustomers([]);
+      setTransactions([]);
+      setReminders([]);
+      setSettings(null);
+      setCustomersSynced(true);
+      setTransactionsSynced(true);
+    }
+  }, [userId]);
+
+  // Monitor sync states to end loading
+  useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+    if (customersSynced && transactionsSynced) {
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+  }, [userId, customersSynced, transactionsSynced]);
 
  // 1. Sync User settings
  useEffect(() => {
@@ -212,30 +240,29 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
  const q = query(customersRef, orderBy('createdAt', 'desc'));
 
  const storedCustomers = localStorage.getItem(`easy_due_customers_${userId}`);
- if (!storedCustomers || JSON.parse(storedCustomers).length === 0) {
- setLoading(true);
- }
  const unsubscribe = onSnapshot(q, (snapshot) => {
-  const list: Customer[] = [];
-  snapshot.forEach((docSnap) => {
-  const data = docSnap.data();
-  list.push({
-  ...data,
-  id: docSnap.id,
-  createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
-  updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt),
-  deletedAt: data.deletedAt?.toDate ? data.deletedAt.toDate() : (data.deletedAt ? new Date(data.deletedAt) : null)
-  } as Customer);
+   const list: Customer[] = [];
+   snapshot.forEach((docSnap) => {
+   const data = docSnap.data();
+   list.push({
+   ...data,
+   id: docSnap.id,
+   createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
+   updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt),
+   deletedAt: data.deletedAt?.toDate ? data.deletedAt.toDate() : (data.deletedAt ? new Date(data.deletedAt) : null)
+   } as Customer);
+   });
+   setCustomers(list.filter(c => !c.isDeleted));
+   setTrashCustomers(list.filter(c => c.isDeleted));
+   saveLocalCustomers(list);
+   if (!snapshot.metadata.fromCache) {
+     setCustomersSynced(true);
+   }
+  }, (error) => {
+  console.warn("Firestore error syncing customers list, using offline cache fallback:", error);
+  loadLocalData();
+  setCustomersSynced(true);
   });
-  setCustomers(list.filter(c => !c.isDeleted));
-  setTrashCustomers(list.filter(c => c.isDeleted));
-  saveLocalCustomers(list);
-  setLoading(false);
- }, (error) => {
- console.warn("Firestore error syncing customers list, using offline cache fallback:", error);
- loadLocalData();
- setLoading(false);
- });
 
  return () => unsubscribe();
  }, [userId]);
@@ -263,15 +290,19 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
  });
  setTransactions(list);
  saveLocalTransactions(list);
-  if (snapshot.size < txLimit) {
-    setHasMoreTxs(false);
-  } else {
-    setHasMoreTxs(true);
-  }
- }, (error) => {
- console.warn("Firestore error syncing transactions, using offline cache fallback:", error);
- loadLocalData();
- });
+   if (snapshot.size < txLimit) {
+     setHasMoreTxs(false);
+   } else {
+     setHasMoreTxs(true);
+   }
+   if (!snapshot.metadata.fromCache) {
+     setTransactionsSynced(true);
+   }
+  }, (error) => {
+  console.warn("Firestore error syncing transactions, using offline cache fallback:", error);
+  loadLocalData();
+  setTransactionsSynced(true);
+  });
 
  return () => unsubscribe();
  }, [userId, txLimit]);

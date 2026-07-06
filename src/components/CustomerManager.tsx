@@ -441,16 +441,17 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
         });
         return;
       }
-      if (editingTx || deletingTx || deletingCustomer || duplicateTxWarning) {
+      if (editingTx || deletingTx || deletingCustomer || duplicateTxWarning || pinActionCustomer) {
         setEditingTx(null);
         setDeletingTx(null);
         setDeletingCustomer(null);
         setDuplicateTxWarning(null);
+        setPinActionCustomer(null);
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [isEditingCustomer, editingTx, deletingTx, deletingCustomer, duplicateTxWarning]);
+  }, [isEditingCustomer, editingTx, deletingTx, deletingCustomer, duplicateTxWarning, pinActionCustomer]);
 
   // Smooth scroll and highlight effect for target transaction
   React.useEffect(() => {
@@ -510,13 +511,29 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  };
 
  const closeTxModals = () => {
-   if (window.history.state?.modal === 'editTx' || window.history.state?.modal === 'deleteTx') {
-     window.history.back(); // This triggers popstate, which sets states to null
-   } else {
-     setEditingTx(null);
-     setDeletingTx(null);
-   }
- };
+    if (window.history.state?.modal === 'editTx' || window.history.state?.modal === 'deleteTx') {
+      window.history.back(); // This triggers popstate, which sets states to null
+    } else {
+      setEditingTx(null);
+      setDeletingTx(null);
+    }
+  };
+
+  const closePinActionModal = () => {
+    if (window.history.state?.modal === 'pinActionCustomer') {
+      window.history.back();
+    } else {
+      setPinActionCustomer(null);
+    }
+  };
+
+  const closeDeleteCustomerModal = () => {
+    if (window.history.state?.modal === 'deleteCustomer') {
+      window.history.back();
+    } else {
+      setDeletingCustomer(null);
+    }
+  };
 
 
   // Filter & sort customers list (with name-based pinning)
@@ -1560,8 +1577,12 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
  {/* Edit Transaction Modal */}
   {editingTx && (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80">
+    <div 
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80"
+      onClick={closeTxModals}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.15 }}
@@ -1617,8 +1638,12 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
  {/* Delete Transaction Modal */}
   {deletingTx && (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80">
+    <div 
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80"
+      onClick={closeTxModals}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.15 }}
@@ -1770,8 +1795,12 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
   {/* Pin Action Modal (Long Press action modal) */}
   {pinActionCustomer && (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 animate-in fade-in duration-200"
+      onClick={closePinActionModal}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-white dark:bg-zinc-900 w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-2xl p-6"
@@ -1833,8 +1862,12 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
   {/* Delete Customer Account Modal (Red-themed warning modal) */}
   {deletingCustomer && (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80">
+    <div 
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80"
+      onClick={closeDeleteCustomerModal}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-white dark:bg-zinc-900 w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-2xl p-6"
