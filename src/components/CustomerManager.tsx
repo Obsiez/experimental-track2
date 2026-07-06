@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Customer, Transaction } from '../types';
 import { 
   Users, Search, UserPlus, Phone, ArrowUpRight, ArrowDownLeft, Trash2, 
-  X, MessageSquare, Send, ReceiptText, ArrowLeft, Pencil, ChevronDown, ChevronUp, AlertTriangle, ArrowUpDown, Pin, Check } from 'lucide-react';
+  X, MessageSquare, Send, ReceiptText, ArrowLeft, Pencil, ChevronDown, ChevronUp, AlertTriangle, ArrowUpDown, Pin, Check, Delete } from 'lucide-react';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import { translations, formatNumber, formatIndianNumberString, Language } from '../lib/translations';
 import { triggerHaptic } from '../lib/haptics';
@@ -13,6 +13,70 @@ const WhatsAppIcon = () => (
 		<path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.458 5.704 1.459h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
 	</svg>
 );
+
+function getPhoneticKey(str: string): string {
+  // Convert to lowercase and normalize
+  str = str.toLowerCase();
+  
+  // Normalize Bengali 'y' character variations
+  str = str.replace(/য\u09bc/g, 'য়');
+  
+  // Replace English vowel combinations & duplicates
+  str = str.replace(/ee/g, 'i')
+           .replace(/oo/g, 'u')
+           .replace(/ph/g, 'f')
+           .replace(/gh/g, 'g')
+           .replace(/kh/g, 'k')
+           .replace(/sh/g, 's')
+           .replace(/ch/g, 'c')
+           .replace(/th/g, 't')
+           .replace(/dh/g, 'd')
+           .replace(/bh/g, 'b');
+
+  let result = '';
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    
+    // Map Bengali consonants
+    if (/[ম]/i.test(char)) result += 'm';
+    else if (/[বভ]/i.test(char)) result += 'b';
+    else if (/[ত্থটঠদধডঢৎ]/i.test(char)) result += 'd'; // group all t/d sounds
+    else if (/[কখ]/i.test(char)) result += 'k';
+    else if (/[গঘ]/i.test(char)) result += 'g';
+    else if (/[চছ]/i.test(char)) result += 'c';
+    else if (/[জঝয]/i.test(char)) result += 'j';
+    else if (/[পফ]/i.test(char)) result += 'p';
+    else if (/[রলড়ঢ়]/i.test(char)) result += 'l'; // group r/l sounds
+    else if (/[সশষ]/i.test(char)) result += 's';
+    else if (/[নণংঞঙ]/i.test(char)) result += 'n';
+    else if (/[হ]/i.test(char)) result += 'h';
+    else if (/[ওয়য়]/i.test(char)) result += 'w';
+    
+    // Map English characters to normalized consonants
+    else if (/[m]/i.test(char)) result += 'm';
+    else if (/[bv]/i.test(char)) result += 'b';
+    else if (/[dt]/i.test(char)) result += 'd';
+    else if (/[kq]/i.test(char)) result += 'k';
+    else if (/[g]/i.test(char)) result += 'g';
+    else if (/[c]/i.test(char)) result += 'c';
+    else if (/[jz]/i.test(char)) result += 'j';
+    else if (/[pf]/i.test(char)) result += 'p';
+    else if (/[rl]/i.test(char)) result += 'l';
+    else if (/[s]/i.test(char)) result += 's';
+    else if (/[n]/i.test(char)) result += 'n';
+    else if (/[h]/i.test(char)) result += 'h';
+    else if (/[wy]/i.test(char)) result += 'w';
+  }
+  
+  // Remove adjacent duplicate sounds
+  let finalResult = '';
+  for (let i = 0; i < result.length; i++) {
+    if (i === 0 || result[i] !== result[i - 1]) {
+      finalResult += result[i];
+    }
+  }
+  return finalResult;
+}
 
 interface SwipeableCustomerItemProps {
 	customer: Customer;
@@ -459,9 +523,13 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const filteredCustomers = useMemo(() => {
     // 1. Filter customers
     const filtered = customers.filter(c => {
-      // Basic query match
+      // Basic query match and phonetic matching (English-Bangla)
       const queryMatch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         c.phone.includes(searchQuery);
+                         c.phone.includes(searchQuery) ||
+                         (() => {
+                           const pq = getPhoneticKey(searchQuery);
+                           return pq.length > 0 && getPhoneticKey(c.name).includes(pq);
+                         })();
       if (!queryMatch) return false;
 
       // Filter status categories
@@ -731,8 +799,21 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  placeholder={t.searchPlaceholder}
  value={searchQuery}
  onChange={(e) => setSearchQuery(e.target.value)}
- className="w-full pl-11 pr-4 py-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-white text-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+ className="w-full pl-11 pr-12 py-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-white text-lg focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
  />
+ {searchQuery && (
+ <button
+ type="button"
+ onClick={() => {
+ triggerHaptic('tick');
+ setSearchQuery('');
+ }}
+ className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-300 dark:hover:bg-zinc-800/50 transition-all flex items-center justify-center cursor-pointer"
+ title={lang === 'bn' ? 'খালি করুন' : 'Clear search'}
+ >
+ <Delete className="w-5 h-5" />
+ </button>
+ )}
  </div>
 
  {/* Filter Tabs & Sticky Sort Dropdown */}
@@ -1430,42 +1511,45 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  </div>
  ))}
 
-  {selectedCustomerTransactions.length > 0 && (
-    <div className="p-4 text-center flex justify-center gap-3">
-      {(ledgerLimit < selectedCustomerTransactions.length || hasMoreTxs) && (
-        <button 
-          type="button"
-          onClick={() => {
-            triggerHaptic('single');
-            setLedgerLimit(prev => {
-              const newLimit = prev + 20;
-              if (newLimit > selectedCustomerTransactions.length && hasMoreTxs) {
+  {(() => {
+    const showMoreVisible = ledgerLimit === 5 && (selectedCustomerTransactions.length > 5 || hasMoreTxs);
+    const showLessVisible = ledgerLimit > 5;
+    if (!showMoreVisible && !showLessVisible) return null;
+
+    return (
+      <div className="p-4 text-center flex justify-center gap-3">
+        {showMoreVisible && (
+          <button 
+            type="button"
+            onClick={() => {
+              triggerHaptic('single');
+              setLedgerLimit(Math.max(selectedCustomerTransactions.length, 1000));
+              if (hasMoreTxs) {
                 loadMoreTransactions();
               }
-              return newLimit;
-            });
-          }}
-          className="flex items-center gap-1 px-5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-full transition-colors cursor-pointer"
-        >
-          {lang === 'bn' ? 'আরও দেখুন' : 'Show More'}
-          <ChevronDown className="w-4 h-4" />
-        </button>
-      )}
-      {ledgerLimit > 5 && (
-        <button 
-          type="button"
-          onClick={() => {
-            triggerHaptic('single');
-            setLedgerLimit(5);
-          }}
-          className="flex items-center gap-1 px-5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-full transition-colors cursor-pointer"
-        >
-          {lang === 'bn' ? 'কম দেখুন' : 'Show Less'}
-          <ChevronUp className="w-4 h-4" />
-        </button>
-      )}
-    </div>
-  )}
+            }}
+            className="flex items-center gap-1 px-5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-full transition-colors cursor-pointer"
+          >
+            {lang === 'bn' ? 'আরও দেখুন' : 'Show More'}
+            <ChevronDown className="w-4 h-4" />
+          </button>
+        )}
+        {showLessVisible && (
+          <button 
+            type="button"
+            onClick={() => {
+              triggerHaptic('single');
+              setLedgerLimit(5);
+            }}
+            className="flex items-center gap-1 px-5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-full transition-colors cursor-pointer"
+          >
+            {lang === 'bn' ? 'কম দেখুন' : 'Show Less'}
+            <ChevronUp className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    );
+  })()}
  </div>
  )}
  </div>
