@@ -3,7 +3,7 @@ import { Customer, Transaction, Language } from '../types';
 import { 
 	Search, UserPlus, Phone, ArrowUpRight, ArrowDownLeft, ReceiptText, ChevronDown, ChevronUp, Pin, 
 	MessageSquare, Trash2, Pencil, RefreshCw, X, UserMinus, Plus, ShieldCheck, CheckCircle2, 
-	AlertTriangle, ArrowLeftRight, Check, Trash
+	AlertTriangle, ArrowLeftRight, Check, Trash, Users, Send, ArrowLeft, ArrowUpDown, Delete
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
