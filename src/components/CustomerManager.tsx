@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { Customer, Transaction } from '../types';
+import React, { useState, useMemo, useRef } from 'react';
+import { Customer, Transaction, Language } from '../types';
 import { 
-  Users, Search, UserPlus, Phone, ArrowUpRight, ArrowDownLeft, Trash2, 
-  X, MessageSquare, Send, ReceiptText, ArrowLeft, Pencil, ChevronDown, ChevronUp, AlertTriangle, ArrowUpDown, Pin, Check, Delete } from 'lucide-react';
-import { motion, AnimatePresence, useAnimation } from 'motion/react';
-import { translations, formatNumber, formatIndianNumberString, Language } from '../lib/translations';
-import { triggerHaptic } from '../lib/haptics';
+	Search, UserPlus, Phone, ArrowUpRight, ArrowDownLeft, ReceiptText, ChevronDown, ChevronUp, Pin, 
+	MessageSquare, Trash2, Pencil, RefreshCw, X, UserMinus, Plus, ShieldCheck, CheckCircle2, 
+	AlertTriangle, ArrowLeftRight, Check, Trash
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'motion/react';
+import { getPhoneticKey } from '../lib/phonetics';
 
 const WhatsAppIcon = () => (
 	<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" className="shrink-0">
@@ -14,69 +15,6 @@ const WhatsAppIcon = () => (
 	</svg>
 );
 
-function getPhoneticKey(str: string): string {
-  // Convert to lowercase and normalize
-  str = str.toLowerCase();
-  
-  // Normalize Bengali 'y' character variations
-  str = str.replace(/য\u09bc/g, 'য়');
-  
-  // Replace English vowel combinations & duplicates
-  str = str.replace(/ee/g, 'i')
-           .replace(/oo/g, 'u')
-           .replace(/ph/g, 'f')
-           .replace(/gh/g, 'g')
-           .replace(/kh/g, 'k')
-           .replace(/sh/g, 's')
-           .replace(/ch/g, 'c')
-           .replace(/th/g, 't')
-           .replace(/dh/g, 'd')
-           .replace(/bh/g, 'b');
-
-  let result = '';
-  for (let i = 0; i < str.length; i++) {
-    const char = str[i];
-    
-    // Map Bengali consonants
-    if (/[ম]/i.test(char)) result += 'm';
-    else if (/[বভ]/i.test(char)) result += 'b';
-    else if (/[ত্থটঠদধডঢৎ]/i.test(char)) result += 'd'; // group all t/d sounds
-    else if (/[কখ]/i.test(char)) result += 'k';
-    else if (/[গঘ]/i.test(char)) result += 'g';
-    else if (/[চছ]/i.test(char)) result += 'c';
-    else if (/[জঝয]/i.test(char)) result += 'j';
-    else if (/[পফ]/i.test(char)) result += 'p';
-    else if (/[রলড়ঢ়]/i.test(char)) result += 'l'; // group r/l sounds
-    else if (/[সশষ]/i.test(char)) result += 's';
-    else if (/[নণংঞঙ]/i.test(char)) result += 'n';
-    else if (/[হ]/i.test(char)) result += 'h';
-    else if (/[ওয়য়]/i.test(char)) result += 'w';
-    
-    // Map English characters to normalized consonants
-    else if (/[m]/i.test(char)) result += 'm';
-    else if (/[bv]/i.test(char)) result += 'b';
-    else if (/[dt]/i.test(char)) result += 'd';
-    else if (/[kq]/i.test(char)) result += 'k';
-    else if (/[g]/i.test(char)) result += 'g';
-    else if (/[c]/i.test(char)) result += 'c';
-    else if (/[jz]/i.test(char)) result += 'j';
-    else if (/[pf]/i.test(char)) result += 'p';
-    else if (/[rl]/i.test(char)) result += 'l';
-    else if (/[s]/i.test(char)) result += 's';
-    else if (/[n]/i.test(char)) result += 'n';
-    else if (/[h]/i.test(char)) result += 'h';
-    else if (/[wy]/i.test(char)) result += 'w';
-  }
-  
-  // Remove adjacent duplicate sounds
-  let finalResult = '';
-  for (let i = 0; i < result.length; i++) {
-    if (i === 0 || result[i] !== result[i - 1]) {
-      finalResult += result[i];
-    }
-  }
-  return finalResult;
-}
 
 interface SwipeableCustomerItemProps {
 	customer: Customer;
@@ -441,17 +379,18 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
         });
         return;
       }
-      if (editingTx || deletingTx || deletingCustomer || duplicateTxWarning || pinActionCustomer) {
+      if (editingTx || deletingTx || deletingCustomer || duplicateTxWarning || pinActionCustomer || phoneWarningCustomer) {
         setEditingTx(null);
         setDeletingTx(null);
         setDeletingCustomer(null);
         setDuplicateTxWarning(null);
         setPinActionCustomer(null);
+        setPhoneWarningCustomer(null);
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [isEditingCustomer, editingTx, deletingTx, deletingCustomer, duplicateTxWarning, pinActionCustomer]);
+  }, [isEditingCustomer, editingTx, deletingTx, deletingCustomer, duplicateTxWarning, pinActionCustomer, phoneWarningCustomer]);
 
   // Smooth scroll and highlight effect for target transaction
   React.useEffect(() => {
@@ -532,6 +471,14 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
       window.history.back();
     } else {
       setDeletingCustomer(null);
+    }
+  };
+
+  const closePhoneWarningModal = () => {
+    if (window.history.state?.modal === 'phoneWarningCustomer') {
+      window.history.back();
+    } else {
+      setPhoneWarningCustomer(null);
     }
   };
 
@@ -1720,8 +1667,12 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
   {/* Phone Warning Modal (Amber-themed warning modal) */}
   {phoneWarningCustomer && (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80">
+    <div 
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80"
+      onClick={closePhoneWarningModal}
+    >
       <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-white dark:bg-zinc-900 w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-2xl p-6"

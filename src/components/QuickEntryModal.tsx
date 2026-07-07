@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { Customer, Transaction } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Search, UserPlus, Check, ArrowDownLeft, ArrowUpRight, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { X, Search, UserPlus, Check, ArrowDownLeft, ArrowUpRight, ChevronLeft, AlertTriangle, Delete } from 'lucide-react';
 import { translations, formatNumber, formatIndianNumberString, Language } from '../lib/translations';
 import { triggerHaptic } from '../lib/haptics';
 import { toast } from 'sonner';
+import { getPhoneticKey } from '../lib/phonetics';
 
 interface QuickEntryModalProps {
   isOpen: boolean;
@@ -100,9 +101,16 @@ export default function QuickEntryModal({
  // Handle customer selection list — order is frozen to the snapshot taken at modal open.
  // This prevents a just-confirmed customer from visibly jumping to the top mid-session.
  const filteredCustomers = useMemo(() => {
-   const list = searchQuery.trim() === ''
-     ? customers
-     : customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const list = searchQuery.trim() === ''
+      ? customers
+      : customers.filter(c => {
+          return c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                 (c.phone && c.phone.includes(searchQuery)) ||
+                 (() => {
+                   const pq = getPhoneticKey(searchQuery);
+                   return pq.length > 0 && getPhoneticKey(c.name).includes(pq);
+                 })();
+        });
    return [...list].sort((a, b) => {
      const idxA = frozenCustomerOrder.indexOf(a.id);
      const idxB = frozenCustomerOrder.indexOf(b.id);
@@ -344,17 +352,30 @@ export default function QuickEntryModal({
 
  {!showAddNewCustomer ? (
  <div className="space-y-3">
- {/* Select Customer search */}
- <div className="relative">
- <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
- <input
- type="text"
- placeholder={lang === 'bn' ? 'গ্রাহক পছন্দ করতে খুঁজুন...' : 'Search to pick customer...'}
- value={searchQuery}
- onChange={(e) => setSearchQuery(e.target.value)}
- className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-white text-base focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
- />
- </div>
+  {/* Select Customer search */}
+  <div className="relative">
+  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" />
+  <input
+  type="text"
+  placeholder={lang === 'bn' ? 'গ্রাহক পছন্দ করতে খুঁজুন...' : 'Search to pick customer...'}
+  value={searchQuery}
+  onChange={(e) => setSearchQuery(e.target.value)}
+  className="w-full pl-11 pr-12 py-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-white text-base focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+  />
+  {searchQuery && (
+  <button
+  type="button"
+  onClick={() => {
+    triggerHaptic('tick');
+    setSearchQuery('');
+  }}
+  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-300 dark:hover:bg-zinc-800/50 transition-all flex items-center justify-center cursor-pointer"
+  title={lang === 'bn' ? 'খালি করুন' : 'Clear search'}
+  >
+  <Delete className="w-5 h-5" />
+  </button>
+  )}
+  </div>
 
  {/* Customer Names Grid */}
   <div className="relative pt-1">
@@ -552,7 +573,7 @@ export default function QuickEntryModal({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    {t.speedyNotice}
+                    {typeof navigator !== 'undefined' && navigator.onLine ? t.saving : t.speedyNotice}
                   </span>
                 ) : (
                   type === 'due' ? t.confirmGive : t.confirmReceive
