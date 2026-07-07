@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Customer, Transaction, Language } from '../types';
+import { Customer, Transaction } from '../types';
 import { 
 	Search, UserPlus, Phone, ArrowUpRight, ArrowDownLeft, ReceiptText, ChevronDown, ChevronUp, Pin, 
 	MessageSquare, Trash2, Pencil, RefreshCw, X, UserMinus, Plus, ShieldCheck, CheckCircle2, 
 	AlertTriangle, ArrowLeftRight, Check, Trash, Users, Send, ArrowLeft, ArrowUpDown, Delete
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import { getPhoneticKey } from '../lib/phonetics';
-import { translations, formatNumber, formatIndianNumberString } from '../lib/translations';
+import { translations, formatNumber, formatIndianNumberString, Language } from '../lib/translations';
+import { triggerHaptic } from '../lib/haptics';
 
 const WhatsAppIcon = () => (
 	<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" className="shrink-0">
