@@ -145,7 +145,7 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
       const timer = setTimeout(() => {
         setCustomersSynced(true);
         setTransactionsSynced(true);
-      }, 2500);
+      }, 1000);
       
       return () => clearTimeout(timer);
     } else {

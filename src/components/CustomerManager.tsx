@@ -8,6 +8,7 @@ import {
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { getPhoneticKey } from '../lib/phonetics';
+import { translations, formatNumber, formatIndianNumberString } from '../lib/translations';
 
 const WhatsAppIcon = () => (
 	<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" className="shrink-0">
