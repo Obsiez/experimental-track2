@@ -195,6 +195,15 @@ const SwipeableCustomerItem = ({
 };
 
 
+const parseFirestoreDate = (dateVal: any): Date => {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Date) return dateVal;
+  if (typeof dateVal.toDate === 'function') return dateVal.toDate();
+  if (dateVal.seconds !== undefined) return new Date(dateVal.seconds * 1000);
+  const parsed = new Date(dateVal);
+  return isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
 interface CustomerManagerProps {
  customers: Customer[];
  transactions: Transaction[];
@@ -220,6 +229,8 @@ interface CustomerManagerProps {
   setHighlightedTxId?: (id: string | null) => void;
   hasMoreTxs: boolean;
   loadMoreTransactions: () => void;
+  customerTxLimit?: number;
+  resetCustomerTxLimit?: () => void;
 }
 
 export default function CustomerManager({
@@ -234,10 +245,15 @@ export default function CustomerManager({
  selectedCustomerId,
  setSelectedCustomerId,
  lang,
- triggerConfirm
-,
-  swipeGesturesEnabled = true
-, highlightedTxId = null, setHighlightedTxId = () => {}, hasMoreTxs, loadMoreTransactions}: CustomerManagerProps) {
+ triggerConfirm,
+  swipeGesturesEnabled = true,
+  highlightedTxId = null,
+  setHighlightedTxId = () => {},
+  hasMoreTxs,
+  loadMoreTransactions,
+  customerTxLimit = 5,
+  resetCustomerTxLimit = () => {}
+}: CustomerManagerProps) {
  const t = translations[lang];
 
  const [searchQuery, setSearchQuery] = useState('');
@@ -545,9 +561,33 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  }, [customers, selectedCustomerId]);
 
  const selectedCustomerTransactions = useMemo(() => {
- if (!selectedCustomerId) return [];
- return transactions.filter(t => t.customerId === selectedCustomerId);
- }, [transactions, selectedCustomerId]);
+    if (!selectedCustomerId) return [];
+    return transactions.filter(t => t.customerId === selectedCustomerId);
+  }, [transactions, selectedCustomerId]);
+
+  const groupedTransactions = useMemo(() => {
+    const groups = {};
+    selectedCustomerTransactions.forEach(tx => {
+      const d = parseFirestoreDate(tx.date);
+      const dateStr = d.toDateString(); // e.g. "Mon Jun 22 2026"
+      if (!groups[dateStr]) {
+        groups[dateStr] = [];
+      }
+      groups[dateStr].push(tx);
+    });
+
+    return Object.keys(groups)
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+      .map(dateStr => ({
+        dateStr,
+        dateObj: new Date(dateStr),
+        items: groups[dateStr].sort((a, b) => {
+          const tA = parseFirestoreDate(a.date).getTime();
+          const tB = parseFirestoreDate(b.date).getTime();
+          return tB - tA;
+        })
+      }));
+  }, [selectedCustomerTransactions]);
 
  const handleCreateCustomer = async (e: React.FormEvent) => {
  e.preventDefault();
@@ -1396,130 +1436,144 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  )}
  </AnimatePresence>
 
- {/* HISTORICAL LEDGER FOR THIS CUSTOMER */}
+   {/* HISTORICAL LEDGER FOR THIS CUSTOMER */}
   <div id="statements_timeline" className="space-y-3">
- <span className="text-xs font-extrabold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
- {t.statements} ({formatNumber(selectedCustomerTransactions.length, lang)})
- </span>
+    <span className="text-xs font-extrabold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
+      {t.statements} ({formatNumber(selectedCustomerTransactions.length, lang)})
+    </span>
 
- <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-md">
- {selectedCustomerTransactions.length === 0 ? (
- <div className="p-8 text-center text-zinc-400 dark:text-zinc-500 flex flex-col items-center gap-2">
- <ReceiptText className="w-10 h-10 stroke-[1.5]" />
- <p className="font-bold text-zinc-700 dark:text-zinc-350">{t.noHistory}</p>
- <p className="text-xs text-zinc-400">{t.duesVisibleHere}</p>
- </div>
- ) : (
- <div className="divide-y divide-zinc-100 dark:divide-zinc-850">
- {selectedCustomerTransactions.slice(0, ledgerLimit).map(tx => (
- <div 
-   key={tx.id} 
-   id={`tx-row-${tx.id}`}
-   className={`p-4 flex flex-col hover:bg-zinc-50/50 dark:hover:bg-zinc-850/50 transition-all duration-500 group cursor-default ${
-     highlightedTxId === tx.id 
-       ? 'ring-4 ring-inset ring-amber-500/80 dark:ring-amber-400/80 bg-amber-50 dark:bg-amber-950/40 rounded-2xl' 
-       : ''
-   }`}
-   >
-  <div className="flex items-center justify-between">
-  <div className="flex items-center gap-3.5 min-w-0">
- <div className={`p-2 rounded-lg shrink-0 ${
- tx.type === 'due' 
- ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-500' 
- : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-500'
- }`}>
- {tx.type === 'due' ? <ArrowUpRight className="w-4.5 h-4.5 stroke-[2.5]" /> : <ArrowDownLeft className="w-4.5 h-4.5 stroke-[2.5]" />}
- </div>
- <div className="min-w-0">
- <div className="text-base font-semibold text-zinc-850 dark:text-zinc-200 truncate">
- {tx.description || (tx.type === 'due' ? t.dueTrigger : t.paymentTrigger)}
- </div>
- <div className="text-xs text-zinc-400 dark:text-zinc-500 font-bold mt-0.5 uppercase">
- {new Date(tx.date).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
- {' • '}
- {new Date(tx.date).toLocaleTimeString(lang === 'bn' ? 'bn-BD' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
- </div>
- </div>
- </div>
+    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-md">
+      {selectedCustomerTransactions.length === 0 ? (
+        <div className="p-8 text-center text-zinc-400 dark:text-zinc-500 flex flex-col items-center gap-2">
+          <ReceiptText className="w-10 h-10 stroke-[1.5]" />
+          <p className="font-bold text-zinc-700 dark:text-zinc-350">{t.noHistory}</p>
+          <p className="text-xs text-zinc-400">{t.duesVisibleHere}</p>
+        </div>
+      ) : (
+        <>
+          <div className="divide-y divide-zinc-150 dark:divide-zinc-800">
+            {groupedTransactions.map(group => (
+              <div key={group.dateStr} className="flex flex-col">
+                {/* Date Header Indicator */}
+                <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-950/60 border-b border-zinc-100 dark:border-zinc-850 flex items-center justify-between">
+                  <span className="text-[11px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    {group.dateObj.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                  <span className="text-[10px] font-bold text-zinc-450 dark:text-zinc-505">
+                    {formatNumber(group.items.length, lang)} {lang === 'bn' ? 'টি এন্ট্রি' : 'entries'}
+                  </span>
+                </div>
+                
+                {/* Grouped Transactions List */}
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-850">
+                  {group.items.map(tx => (
+                    <div 
+                      key={tx.id} 
+                      id={`tx-row-${tx.id}`}
+                      className={`p-4 flex flex-col hover:bg-zinc-50/50 dark:hover:bg-zinc-850/50 transition-all duration-500 group cursor-default ${
+                        highlightedTxId === tx.id 
+                          ? 'ring-4 ring-inset ring-amber-500/80 dark:ring-amber-400/80 bg-amber-50 dark:bg-amber-950/40 rounded-2xl' 
+                          : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className={`p-2 rounded-lg shrink-0 ${
+                            tx.type === 'due' 
+                              ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-500' 
+                              : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-500'
+                          }`}>
+                            {tx.type === 'due' ? <ArrowUpRight className="w-4.5 h-4.5 stroke-[2.5]" /> : <ArrowDownLeft className="w-4.5 h-4.5 stroke-[2.5]" />}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-base font-semibold text-zinc-850 dark:text-zinc-200 truncate">
+                              {tx.description || (tx.type === 'due' ? t.dueTrigger : t.paymentTrigger)}
+                            </div>
+                            <div className="text-xs text-zinc-400 dark:text-zinc-500 font-bold mt-0.5 uppercase">
+                              {new Date(tx.date).toLocaleTimeString(lang === 'bn' ? 'bn-BD' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex flex-col items-end shrink-0">
+                          <div className={`text-base sm:text-lg font-black ${
+                            tx.type === 'due' ? 'text-rose-600 dark:text-rose-450' : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
+                            {tx.type === 'due' ? '+' : '-'} ৳ {formatNumber(tx.amount, lang)}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerHaptic('single');
+                                openEditTxModal(tx);
+                              }}
+                              className="p-1.5 rounded-lg text-zinc-400 hover:text-emerald-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                              title={lang === 'bn' ? 'পরিবর্তন' : 'Edit'}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerHaptic('double');
+                                openDeleteTxModal(tx);
+                              }}
+                              className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                              title={lang === 'bn' ? 'মুছুন' : 'Delete'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
 
-  <div className="flex flex-col items-end shrink-0">
-  <div className={`text-base sm:text-lg font-black ${
-  tx.type === 'due' ? 'text-rose-600 dark:text-rose-450' : 'text-emerald-600 dark:text-emerald-400'
-  }`}>
-  {tx.type === 'due' ? '+' : '-'} ৳ {formatNumber(tx.amount, lang)}
-  </div>
-  <div className="flex items-center gap-2 mt-1 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        triggerHaptic('single');
-        openEditTxModal(tx);
-      }}
-      className="p-1.5 rounded-lg text-zinc-400 hover:text-emerald-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
-      title={lang === 'bn' ? 'পরিবর্তন' : 'Edit'}
-    >
-      <Pencil className="w-4 h-4" />
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        triggerHaptic('double');
-        openDeleteTxModal(tx);
-      }}
-      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
-      title={lang === 'bn' ? 'মুছুন' : 'Delete'}
-    >
-      <Trash2 className="w-4 h-4" />
-    </button>
-  </div>
-  </div>
-  </div>
- </div>
- ))}
+          {(() => {
+            const showMoreVisible = hasMoreTxs;
+            const showLessVisible = customerTxLimit > 5;
+            if (!showMoreVisible && !showLessVisible) return null;
 
-  {(() => {
-    const showMoreVisible = ledgerLimit === 5 && selectedCustomerTransactions.length > 5;
-    const showLessVisible = ledgerLimit > 5;
-    if (!showMoreVisible && !showLessVisible) return null;
-
-    return (
-      <div className="p-4 text-center flex justify-center gap-3">
-        {showMoreVisible && (
-          <button 
-            type="button"
-            onClick={() => {
-              triggerHaptic('single');
-              setLedgerLimit(Math.max(selectedCustomerTransactions.length, 1000));
-              if (hasMoreTxs) {
-                loadMoreTransactions();
-              }
-            }}
-            className="flex items-center gap-1 px-5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-full transition-colors cursor-pointer"
-          >
-            {lang === 'bn' ? 'আরও দেখুন' : 'Show More'}
-            <ChevronDown className="w-4 h-4" />
-          </button>
-        )}
-        {showLessVisible && (
-          <button 
-            type="button"
-            onClick={() => {
-              triggerHaptic('single');
-              setLedgerLimit(5);
-            }}
-            className="flex items-center gap-1 px-5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-full transition-colors cursor-pointer"
-          >
-            {lang === 'bn' ? 'কম দেখুন' : 'Show Less'}
-            <ChevronUp className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-    );
-  })()}
- </div>
- )}
- </div>
- </div>
+            return (
+              <div className="p-4 text-center flex justify-center gap-3 border-t border-zinc-100 dark:border-zinc-850">
+                {showMoreVisible && (
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('single');
+                      loadMoreTransactions();
+                    }}
+                    className="flex items-center gap-1 px-5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-full transition-colors cursor-pointer"
+                  >
+                    {lang === 'bn' ? 'আরও দেখুন' : 'Show More'}
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                )}
+                {showLessVisible && (
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('single');
+                      resetCustomerTxLimit();
+                    }}
+                    className="flex items-center gap-1 px-5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-bold rounded-full transition-colors cursor-pointer"
+                  >
+                    {lang === 'bn' ? 'কম দেখুন' : 'Show Less'}
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+        </>
+      )}
+    </div>
+  </div>
  
  </motion.div>
  )}

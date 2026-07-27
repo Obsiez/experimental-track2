@@ -199,78 +199,83 @@ export default function App() {
   const [selectedDailyDate, setSelectedDailyDate] = useState<Date>(new Date());
 
  // Hook for full database state & synced offline storage
- const {
- customers,
- transactions,
- dailyTransactions,
- reminders,
- settings,
- loading: ledgerLoading,
- isOfflineFallback,
- updateTheme,
- updateSettings,
- createCustomer,
- updateCustomerDetails,
- addTransaction,
- editTransaction,
- deleteTransaction,
- addReminder,
- toggleReminder,
- deleteReminder,
- deleteCustomer,
- trashCustomers,
- restoreCustomer,
- permanentlyDeleteCustomer,
- emptyTrash,
- importLedgerData,
- hasMoreTxs,
- loadMoreTransactions
- } = useLedger(user?.uid, selectedDailyDate);
+  const {
+    customers,
+    customerTransactions,
+    dailyTransactions,
+    reminders,
+    settings,
+    loading: ledgerLoading,
+    isOfflineFallback,
+    updateTheme,
+    updateSettings,
+    createCustomer,
+    updateCustomerDetails,
+    addTransaction,
+    editTransaction,
+    deleteTransaction,
+    addReminder,
+    toggleReminder,
+    deleteReminder,
+    deleteCustomer,
+    trashCustomers,
+    restoreCustomer,
+    permanentlyDeleteCustomer,
+    emptyTrash,
+    importLedgerData,
+    hasMoreCustomerTxs,
+    customerTxLimit,
+    loadMoreCustomerTransactions,
+    resetCustomerTxLimit,
+    monthlySummaries,
+    exportBackup,
+    rebuildMonthlySummaries
+  } = useLedger(user?.uid, selectedDailyDate, selectedCustomerIdForDetail);
 
   const dateInputRef = React.useRef<HTMLInputElement>(null);
 
   const todayTransactions = dailyTransactions;
 
- // End-of-Day Cash Summary Notification
- useEffect(() => {
- if (!user || !transactions || transactions.length === 0) return;
+// End-of-Day Cash Summary Notification
+  useEffect(() => {
+    if (!user || !dailyTransactions || dailyTransactions.length === 0) return;
 
- if ('Notification' in window && window.Notification && window.Notification.permission === 'default') {
- window.Notification.requestPermission();
- }
+    if ('Notification' in window && window.Notification && window.Notification.permission === 'default') {
+      window.Notification.requestPermission();
+    }
 
- const checkAndNotify = () => {
- const now = new Date();
- if (now.getHours() >= 20) { // 8 PM or later
- const todayStr = now.toDateString();
- const lastNotifiedDate = localStorage.getItem('last_cash_summary_date');
- 
- if (lastNotifiedDate !== todayStr && 'Notification' in window && window.Notification && window.Notification.permission === 'granted') {
- let todaysCash = 0;
- transactions.forEach(tx => {
- const txDate = new Date(tx.date);
- if (txDate.toDateString() === todayStr && tx.type === 'payment') {
- todaysCash += tx.amount;
- }
- });
- 
- if (todaysCash > 0) {
- showNotification(lang === 'bn' ? 'আজকের নগদ আদায়' : 'Daily Cash Summary', {
- body: lang === 'bn' 
- ? `আজকের মোট নগদ আদায়: ৳${formatNumber(todaysCash, 'bn')}` 
- : `Total cash collected today: ৳${formatNumber(todaysCash, 'en')}`,
- icon: '/icon-192.png'
- });
- localStorage.setItem('last_cash_summary_date', todayStr);
- }
- }
- }
- };
+    const checkAndNotify = () => {
+      const now = new Date();
+      if (now.getHours() >= 20) { // 8 PM or later
+        const todayStr = now.toDateString();
+        const lastNotifiedDate = localStorage.getItem('last_cash_summary_date');
+        
+        if (lastNotifiedDate !== todayStr && 'Notification' in window && window.Notification && window.Notification.permission === 'granted') {
+          let todaysCash = 0;
+          dailyTransactions.forEach(tx => {
+            const txDate = new Date(tx.date);
+            if (txDate.toDateString() === todayStr && tx.type === 'payment') {
+              todaysCash += tx.amount;
+            }
+          });
+          
+          if (todaysCash > 0) {
+            showNotification(lang === 'bn' ? 'আজকের নগদ আদায়' : 'Daily Cash Summary', {
+              body: lang === 'bn' 
+                ? `আজকের মোট নগদ আদায়: ৳${formatNumber(todaysCash, 'bn')}` 
+                : `Total cash collected today: ৳${formatNumber(todaysCash, 'en')}`,
+              icon: '/icon-192.png'
+            });
+            localStorage.setItem('last_cash_summary_date', todayStr);
+          }
+        }
+      }
+    };
 
- checkAndNotify();
- const interval = setInterval(checkAndNotify, 60000);
- return () => clearInterval(interval);
- }, [user, transactions, lang]);
+    checkAndNotify();
+    const interval = setInterval(checkAndNotify, 60000);
+    return () => clearInterval(interval);
+  }, [user, dailyTransactions, lang]);
 
   // Sync theme with Firestore settings on initial load or cross-device change
   const [initialSettingsSynced, setInitialSettingsSynced] = useState(false);
@@ -615,19 +620,21 @@ export default function App() {
  <div className="space-y-6">
  {currentTab === 'home' && (
  <Dashboard 
- customers={customers}
- transactions={transactions}
- onOpenQuickEntry={openQuickEntry}
- onSelectCustomer={navigateToCustomer}
- lang={lang}
- onViewDailyTxs={() => navigateTo('daily_transactions')}
- />
+  customers={customers}
+  transactions={dailyTransactions}
+  transactionsCount={settings?.transactionsCount || 0}
+  monthlySummaries={monthlySummaries}
+  onOpenQuickEntry={openQuickEntry}
+  onSelectCustomer={navigateToCustomer}
+  lang={lang}
+  onViewDailyTxs={() => navigateTo('daily_transactions')}
+  />
  )}
 
  {currentTab === 'customers' && (
  <CustomerManager 
  customers={customers}
- transactions={transactions}
+ transactions={customerTransactions}
  createCustomer={createCustomer}
  addTransaction={addTransaction}
  editTransaction={editTransaction}
@@ -635,7 +642,7 @@ export default function App() {
  updateCustomerDetails={updateCustomerDetails}
  deleteCustomer={deleteCustomer}
  selectedCustomerId={selectedCustomerIdForDetail}
- setSelectedCustomerId={(id) => navigateTo('customers', id)} hasMoreTxs={hasMoreTxs} loadMoreTransactions={loadMoreTransactions}
+ setSelectedCustomerId={(id) => navigateTo('customers', id)} hasMoreTxs={hasMoreCustomerTxs} loadMoreTransactions={loadMoreCustomerTransactions} customerTxLimit={customerTxLimit} resetCustomerTxLimit={resetCustomerTxLimit}
  lang={lang}
  triggerConfirm={triggerConfirm}
  swipeGesturesEnabled={swipeGesturesEnabled}
@@ -659,27 +666,28 @@ updateSettings={updateSettings}
 
  {currentTab === 'settings' && (
   <SettingsManager 
-         theme={theme}
-         settings={settings}
-         updateTheme={handleThemeChange}
-         customers={customers}
-         transactions={transactions}
-         onSignOut={handleSignOut}
-         lang={lang}
-         onLangChange={handleLangChange}
-         deferredPrompt={deferredPrompt}
-         onInstallComplete={() => setDeferredPrompt(null)}
-         trashCustomers={trashCustomers}
-         restoreCustomer={restoreCustomer}
-         permanentlyDeleteCustomer={permanentlyDeleteCustomer}
-         emptyTrash={emptyTrash}
-         swipeGesturesEnabled={swipeGesturesEnabled}
-         onSwipeGesturesToggle={(val) => {
-           setSwipeGesturesEnabled(val);
-           localStorage.setItem('swipe_gestures_enabled', val ? 'true' : 'false');
-         }}
-         importLedgerData={importLedgerData}
-       />
+          theme={theme}
+          settings={settings}
+          updateTheme={handleThemeChange}
+          customers={customers}
+          exportBackup={exportBackup}
+          rebuildMonthlySummaries={rebuildMonthlySummaries}
+          onSignOut={handleSignOut}
+          lang={lang}
+          onLangChange={handleLangChange}
+          deferredPrompt={deferredPrompt}
+          onInstallComplete={() => setDeferredPrompt(null)}
+          trashCustomers={trashCustomers}
+          restoreCustomer={restoreCustomer}
+          permanentlyDeleteCustomer={permanentlyDeleteCustomer}
+          emptyTrash={emptyTrash}
+          swipeGesturesEnabled={swipeGesturesEnabled}
+          onSwipeGesturesToggle={(val) => {
+            setSwipeGesturesEnabled(val);
+            localStorage.setItem('swipe_gestures_enabled', val ? 'true' : 'false');
+          }}
+          importLedgerData={importLedgerData}
+        />
   )}
 
       {currentTab === 'daily_transactions' && (
@@ -919,11 +927,11 @@ updateSettings={updateSettings}
  addTransaction={addTransaction}
  preselectedCustomerId={selectedCustomerIdForDetail || undefined}
  lang={lang}
-   transactions={transactions}
-  onViewCustomer={navigateToCustomer}
-  highlightedTxId={highlightedTxId}
-  setHighlightedTxId={setHighlightedTxId}
-  />
+  transactions={customerTransactions}
+ onViewCustomer={navigateToCustomer}
+ highlightedTxId={highlightedTxId}
+ setHighlightedTxId={setHighlightedTxId}
+ />
 
  {/* APP CUSTOM HIGH-FIDELITY ALERT & CONFIRM MODALS */}
  {appDialog && appDialog.isOpen && (

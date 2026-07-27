@@ -38,143 +38,124 @@ function compactChart(val: number, lang: Language): string {
 
 interface AnalyticsManagerProps {
  customers: Customer[];
- transactions: Transaction[];
+ monthlySummaries: any[];
  lang: Language;
 }
 
-export default function AnalyticsManager({ customers, transactions, lang }: AnalyticsManagerProps) {
+export default function AnalyticsManager({ customers, monthlySummaries, lang }: AnalyticsManagerProps) {
  const t = translations[lang];
 
  // ── Helper: list all months that have transactions, sorted descending ──────
  const availableMonths = useMemo(() => {
-  const monthsSet = new Set<string>();
-  const now = new Date();
-  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  monthsSet.add(currentMonthKey);
+   const monthsSet = new Set<string>();
+   const now = new Date();
+   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+   monthsSet.add(currentMonthKey);
 
-  transactions.forEach(tx => {
-   const d = parseFirestoreDate(tx.date);
-   if (!isNaN(d.getTime())) {
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    monthsSet.add(key);
-   }
-  });
-
-  return Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
- }, [transactions]);
-
- const [selectedMonth, setSelectedMonth] = useState<string>(availableMonths[0] || '');
-
- // ── Helpers ───────────────────────────────────────────────────────────────
- const toBnNum = (n: string | number) =>
-  n.toString().replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[Number(d)]);
-
- const getMonthName = (monthKey: string) => {
-  if (!monthKey) return '';
-  const [year, monthStr] = monthKey.split('-');
-  const monthIndex = parseInt(monthStr, 10) - 1;
-  const enMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const bnMonths = ['জানুয়ারি','ফেব্রুয়ারি','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগস্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
-  const mName = lang === 'bn' ? bnMonths[monthIndex] : enMonths[monthIndex];
-  const yName = lang === 'bn' ? toBnNum(year) : year;
-  return `${mName} ${yName}`;
- };
-
- // ── 1. Monthly summary metrics for the selected month ─────────────────────
- const monthlyMetrics = useMemo(() => {
-  if (!selectedMonth) return { dues: 0, payments: 0, count: 0, efficiency: 0 };
-  const [year, month] = selectedMonth.split('-').map(Number);
-  let duesTotal = 0, paymentsTotal = 0, txCount = 0;
-
-  transactions.forEach(tx => {
-   const d = parseFirestoreDate(tx.date);
-   if (d.getFullYear() === year && (d.getMonth() + 1) === month) {
-    txCount++;
-    if (tx.type === 'due') duesTotal += tx.amount;
-    else if (tx.type === 'payment') paymentsTotal += tx.amount;
-   }
-  });
-
-  const efficiency = duesTotal > 0
-   ? Math.round((paymentsTotal / duesTotal) * 100)
-   : paymentsTotal > 0 ? 100 : 0;
-
-  return { dues: duesTotal, payments: paymentsTotal, count: txCount, efficiency: Math.min(100, efficiency) };
- }, [transactions, selectedMonth]);
-
- // ── 2. Chart data: last 6 months ──────────────────────────────────────────
- const chartData = useMemo(() => {
-  const EN_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const BN_SHORT = ['জানু','ফেব্রু','মার্চ','এপ্রি','মে','জুন','জুলা','আগ','সেপ্টে','অক্টো','নভে','ডিসে'];
-  const now = new Date();
-  const list: { key: string; label: string; dues: number; payments: number }[] = [];
-
-  for (let i = 5; i >= 0; i--) {
-   const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-   const yr = d.getFullYear();
-   const mo = d.getMonth(); // 0-indexed
-   const key = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-
-   let dSum = 0, pSum = 0;
-
-   transactions.forEach(tx => {
-    const tDate = parseFirestoreDate(tx.date);
-    if (tDate.getFullYear() === yr && tDate.getMonth() === mo) {
-     if (tx.type === 'due') dSum += tx.amount;
-     else if (tx.type === 'payment') pSum += tx.amount;
+   monthlySummaries.forEach(s => {
+    if (s.id) {
+     monthsSet.add(s.id);
     }
    });
 
-   list.push({
-    key,
-    label: lang === 'bn' ? BN_SHORT[mo] : EN_SHORT[mo],
-    dues: dSum,
-    payments: pSum,
-   });
-  }
+   return Array.from(monthsSet).sort((a, b) => b.localeCompare(a));
+  }, [monthlySummaries]);
 
-  return list;
- }, [transactions, lang]);
+  const [selectedMonth, setSelectedMonth] = useState<string>(availableMonths[0] || '');
 
- // ── 3. Scale ──────────────────────────────────────────────────────────────
- const maxChartValue = useMemo(() => {
-  let max = 0;
-  chartData.forEach(d => {
-   if (d.dues > max) max = d.dues;
-   if (d.payments > max) max = d.payments;
-  });
-  return max > 0 ? max * 1.15 : 1000;
- }, [chartData]);
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const toBnNum = (n: string | number) =>
+   n.toString().replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[Number(d)]);
 
- const hasAnyData = chartData.some(d => d.dues > 0 || d.payments > 0);
+  const getMonthName = (monthKey: string) => {
+   if (!monthKey) return '';
+   const [year, monthStr] = monthKey.split('-');
+   const monthIndex = parseInt(monthStr, 10) - 1;
+   const enMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+   const bnMonths = ['জানুয়ারি','ফেব্রুয়ারি','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগস্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
+   const mName = lang === 'bn' ? bnMonths[monthIndex] : enMonths[monthIndex];
+   const yName = lang === 'bn' ? toBnNum(year) : year;
+   return `${mName} ${yName}`;
+  };
 
- const now = new Date();
- const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // ── 1. Monthly summary metrics for the selected month ─────────────────────
+  const monthlyMetrics = useMemo(() => {
+   if (!selectedMonth) return { dues: 0, payments: 0, count: 0, efficiency: 0 };
+   const summary = monthlySummaries.find(s => s.id === selectedMonth);
 
- // ── 4. Top debtors ─────────────────────────────────────────────────────────
- const topDebtors = useMemo(() =>
-  [...customers]
-   .filter(c => c.outstandingDue > 0)
-   .sort((a, b) => b.outstandingDue - a.outstandingDue)
-   .slice(0, 5),
-  [customers]);
+   const duesTotal = summary?.dues || 0;
+   const paymentsTotal = summary?.payments || 0;
+   const txCount = summary?.count || 0;
 
- // ── 5. Top payers in the selected month ───────────────────────────────────
- const topPayers = useMemo(() => {
-  if (!selectedMonth) return [];
-  const [year, month] = selectedMonth.split('-').map(Number);
-  const map: Record<string, { name: string; total: number }> = {};
+   const efficiency = duesTotal > 0
+    ? Math.round((paymentsTotal / duesTotal) * 100)
+    : paymentsTotal > 0 ? 100 : 0;
 
-  transactions.forEach(tx => {
-   const d = parseFirestoreDate(tx.date);
-   if (d.getFullYear() === year && (d.getMonth() + 1) === month && tx.type === 'payment') {
-    if (!map[tx.customerId]) map[tx.customerId] = { name: tx.customerName, total: 0 };
-    map[tx.customerId].total += tx.amount;
+   return { dues: duesTotal, payments: paymentsTotal, count: txCount, efficiency: Math.min(100, efficiency) };
+  }, [monthlySummaries, selectedMonth]);
+
+  // ── 2. Chart data: last 6 months ──────────────────────────────────────────
+  const chartData = useMemo(() => {
+   const EN_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+   const BN_SHORT = ['জানু','ফেব্রু','মার্চ','এপ্রি','মে','জুন','জুলা','আগ','সেপ্টে','অক্টো','নভে','ডিসে'];
+   const now = new Date();
+   const list: { key: string; label: string; dues: number; payments: number }[] = [];
+
+   for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const yr = d.getFullYear();
+    const mo = d.getMonth(); // 0-indexed
+    const key = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+
+    const summary = monthlySummaries.find(s => s.id === key);
+    const dSum = summary?.dues || 0;
+    const pSum = summary?.payments || 0;
+
+    list.push({
+     key,
+     label: lang === 'bn' ? BN_SHORT[mo] : EN_SHORT[mo],
+     dues: dSum,
+     payments: pSum,
+    });
    }
-  });
 
-  return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 5);
- }, [transactions, selectedMonth]);
+   return list;
+  }, [monthlySummaries, lang]);
+
+  // ── 3. Scale ──────────────────────────────────────────────────────────────
+  const maxChartValue = useMemo(() => {
+   let max = 0;
+   chartData.forEach(d => {
+    if (d.dues > max) max = d.dues;
+    if (d.payments > max) max = d.payments;
+   });
+   return max > 0 ? max * 1.15 : 1000;
+  }, [chartData]);
+
+  const hasAnyData = chartData.some(d => d.dues > 0 || d.payments > 0);
+
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  // ── 4. Top debtors ─────────────────────────────────────────────────────────
+  const topDebtors = useMemo(() =>
+   [...customers]
+    .filter(c => c.outstandingDue > 0)
+    .sort((a, b) => b.outstandingDue - a.outstandingDue)
+    .slice(0, 5),
+   [customers]);
+
+  // ── 5. Top payers in the selected month ───────────────────────────────────
+  const topPayers = useMemo(() => {
+   if (!selectedMonth) return [];
+   const summary = monthlySummaries.find(s => s.id === selectedMonth);
+   if (!summary || !summary.customerPayments) return [];
+
+   return Object.values(summary.customerPayments)
+    .map((val: any) => ({ name: val.name, total: val.total }))
+    .sort((a: any, b: any) => b.total - a.total)
+    .slice(0, 5);
+  }, [monthlySummaries, selectedMonth]);
 
  // ── Render ─────────────────────────────────────────────────────────────────
  return (

@@ -1,10 +1,11 @@
 export interface UserSettings {
- uid: string;
- email: string;
- theme: 'light' | 'dark';
- dailyReminderTime: string; // e.g. "09:00"
- createdAt: any; // Firestore Timestamp or ISO string
- updatedAt: any;
+  uid: string;
+  email: string;
+  theme: 'light' | 'dark';
+  dailyReminderTime: string; // e.g. "09:00"
+  createdAt: any; // Firestore Timestamp or ISO string
+  updatedAt: any;
+  transactionsCount?: number;
 }
 
 export interface Customer {

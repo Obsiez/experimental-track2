@@ -17,16 +17,17 @@ interface SettingsManagerProps {
   emptyTrash: () => Promise<void>;
   swipeGesturesEnabled: boolean;
   onSwipeGesturesToggle: (val: boolean) => void;
- settings: UserSettings | null;
- updateTheme: (theme: 'light' | 'dark') => Promise<void>;
- customers: Customer[];
- transactions: Transaction[];
- onSignOut: () => void;
- lang: Language;
- onLangChange: (lang: Language) => void;
- deferredPrompt: any;
- onInstallComplete: () => void;
- importLedgerData: (backupData: any, choice: 'merge' | 'clear' | 'skip') => Promise<void>;
+  settings: UserSettings | null;
+  updateTheme: (theme: 'light' | 'dark') => Promise<void>;
+  customers: Customer[];
+  exportBackup: () => Promise<any>;
+  rebuildMonthlySummaries?: () => Promise<void>;
+  onSignOut: () => void;
+  lang: Language;
+  onLangChange: (lang: Language) => void;
+  deferredPrompt: any;
+  onInstallComplete: () => void;
+  importLedgerData: (backupData: any, choice: 'merge' | 'clear' | 'skip') => Promise<void>;
 }
 
 export default function SettingsManager({
@@ -37,18 +38,21 @@ export default function SettingsManager({
   emptyTrash,
   swipeGesturesEnabled,
   onSwipeGesturesToggle,
- settings,
- updateTheme,
- customers,
- transactions,
- onSignOut,
- lang,
- onLangChange,
- deferredPrompt,
- onInstallComplete,
- importLedgerData
+  settings,
+  updateTheme,
+  customers,
+  exportBackup,
+  rebuildMonthlySummaries,
+  onSignOut,
+  lang,
+  onLangChange,
+  deferredPrompt,
+  onInstallComplete,
+  importLedgerData
 }: SettingsManagerProps) {
  const t = translations[lang];
+  const [exporting, setExporting] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
 
   const [hapticsOn, setHapticsOn] = useState(() => localStorage.getItem('haptics') === 'true');
   const [confirmAction, setConfirmAction] = useState<any>(null);
@@ -155,37 +159,43 @@ export default function SettingsManager({
     triggerHaptic('single');
   };
 
- const handleBackupExport = () => {
- const backupData = {
- backupTimestamp: new Date().toISOString(),
- ownerEmail: settings?.email || 'unknown',
- customers: customers.map(c => ({
- name: c.name,
- phone: c.phone,
- outstandingDue: c.outstandingDue,
- createdAt: c.createdAt
- })),
- ledgerTransactions: transactions.map(t => ({
- customer: t.customerName,
- type: t.type,
- amount: t.amount,
- description: t.description,
- date: t.date
- }))
- };
+ const handleBackupExport = async () => {
+    setExporting(true);
+    try {
+      const backupData = await exportBackup();
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ChallanTrack_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(lang === 'bn' ? 'ব্যাকআপ সফলভাবে ডাউনলোড করা হয়েছে' : 'Backup downloaded successfully');
+    } catch (e) {
+      console.warn("Backup export failed:", e);
+      toast.error(lang === 'bn' ? 'ব্যাকআপ তৈরি ব্যর্থ হয়েছে' : 'Backup export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
- const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
- const url = URL.createObjectURL(blob);
- const a = document.createElement('a');
- a.href = url;
- a.download = `ChallanTrack_Backup_${new Date().toISOString().slice(0, 10)}.json`;
- document.body.appendChild(a);
- a.click();
- document.body.removeChild(a);
- URL.revokeObjectURL(url);
- };
+  const handleRebuild = async () => {
+    if (!rebuildMonthlySummaries) return;
+    setRebuilding(true);
+    try {
+      await rebuildMonthlySummaries();
+      toast.success(lang === 'bn' ? 'ডাটাবেস সফলভাবে পুনর্গঠন করা হয়েছে' : 'Database successfully rebuilt');
+    } catch (e) {
+      console.warn(e);
+      toast.error(lang === 'bn' ? 'পুনর্গঠন ব্যর্থ হয়েছে' : 'Rebuild failed');
+    } finally {
+      setRebuilding(false);
+    }
+  };
 
- const activeTheme = settings?.theme || 'light';
+  const activeTheme = settings?.theme || 'light';
 
  return (
  <div className="space-y-6 no-select">
@@ -399,41 +409,65 @@ export default function SettingsManager({
  </div>
 
  {/* Offline Backup Export action */}
- <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
- <div>
- <div className="text-sm font-bold text-zinc-800 dark:text-white">{lang === 'bn' ? 'ব্যাকআপ লিখন ডাউনলোড (.json)' : 'Save Backup (.json)'}</div>
- <p className="text-xs text-zinc-500">{lang === 'bn' ? 'সরাসরি ব্যাকআপ হিসাব ডাউনলোড করে রাখুন।' : 'Download a full ledger copy for safe keeping.'}</p>
- </div>
-  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-    <button
-    onClick={handleBackupExport}
-    className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 font-extrabold text-white rounded-xl text-sm flex items-center justify-center gap-2 cursor-pointer shadow-md transition-colors"
-    >
-    <Download className="w-4 h-4 text-white" />
-    {lang === 'bn' ? 'ব্যাকআপ ফাইল সংরক্ষণ' : 'Download Backup File'}
-    </button>
-
-    <button
-    type="button"
-    onClick={handleImportClick}
-    className="px-5 py-3.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 font-extrabold text-zinc-800 dark:text-zinc-200 border border-zinc-250 dark:border-zinc-700 rounded-xl text-sm flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-colors"
-    >
-    <Upload className="w-4 h-4" />
-    {lang === 'bn' ? 'ব্যাকআপ ফাইল আপলোড' : 'Upload Backup File'}
-    </button>
-    
-    <input
-      type="file"
-      ref={fileInputRef}
-      onChange={handleFileChange}
-      accept=".json"
-      className="hidden"
-    />
+  <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+  <div>
+  <div className="text-sm font-bold text-zinc-800 dark:text-white">{lang === 'bn' ? 'ব্যাকআপ লিখন ডাউনলোড (.json)' : 'Save Backup (.json)'}</div>
+  <p className="text-xs text-zinc-500">{lang === 'bn' ? 'সরাসরি ব্যাকআপ হিসাব ডাউনলোড করে রাখুন।' : 'Download a full ledger copy for safe keeping.'}</p>
   </div>
- </div>
- </div>
+   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+     <button
+     disabled={exporting}
+     onClick={handleBackupExport}
+     className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 font-extrabold text-white rounded-xl text-sm flex items-center justify-center gap-2 cursor-pointer shadow-md transition-colors disabled:opacity-75 disabled:cursor-not-allowed"
+     >
+     <Download className="w-4 h-4 text-white" />
+     {exporting ? (lang === 'bn' ? 'প্রস্তুত হচ্ছে...' : 'Preparing...') : (lang === 'bn' ? 'ব্যাকআপ ফাইল সংরক্ষণ' : 'Download Backup File')}
+     </button>
 
- {/* 5. OWNER PROFILE ACCOUNT DETAIL */}
+     <button
+     type="button"
+     onClick={handleImportClick}
+     className="px-5 py-3.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 font-extrabold text-zinc-800 dark:text-zinc-200 border border-zinc-250 dark:border-zinc-700 rounded-xl text-sm flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-colors"
+     >
+     <Upload className="w-4 h-4" />
+     {lang === 'bn' ? 'ব্যাকআপ ফাইল আপলোড' : 'Upload Backup File'}
+     </button>
+     
+     <input
+       type="file"
+       ref={fileInputRef}
+       onChange={handleFileChange}
+       accept=".json"
+       className="hidden"
+     />
+   </div>
+  </div>
+
+  {/* Rebuild Database action */}
+  {rebuildMonthlySummaries && settings?.uid && settings.uid !== 'local-guest-session' && (
+    <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      <div>
+        <div className="text-sm font-bold text-zinc-800 dark:text-white">
+          {lang === 'bn' ? 'ডাটাবেস পুনর্গঠন ও সংশোধন' : 'Rebuild Database & Fix Inconsistencies'}
+        </div>
+        <p className="text-xs text-zinc-500">
+          {lang === 'bn' ? 'লেনদেনের হিসাব পুনর্গঠন করে ৬ মাসের অ্যানালিটিক্স সম্পূর্ণ ঠিক করুন।' : 'Recalculate all monthly dues/payments counters and restore 100% database accuracy.'}
+        </p>
+      </div>
+      <button
+        type="button"
+        disabled={rebuilding}
+        onClick={handleRebuild}
+        className="px-5 py-3.5 bg-amber-600 hover:bg-amber-700 font-extrabold text-white rounded-xl text-sm flex items-center justify-center gap-2 cursor-pointer shadow-md transition-colors disabled:opacity-75 disabled:cursor-not-allowed"
+      >
+        <RotateCcw className={`w-4.5 h-4.5 text-white ${rebuilding ? 'animate-spin' : ''}`} />
+        {rebuilding ? (lang === 'bn' ? 'পুনর্গঠন হচ্ছে...' : 'Rebuilding...') : (lang === 'bn' ? 'পুনর্গঠন ও মেরামত' : 'Rebuild & Repair')}
+      </button>
+    </div>
+  )}
+  </div>
+
+  {/* 5. OWNER PROFILE ACCOUNT DETAIL */}
  <div className="bg-rose-50/30 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 p-6 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
  <div>
  <div className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">{lang === 'bn' ? 'মালিকানা অ্যাকাউন্ট' : 'Owner Account'}</div>

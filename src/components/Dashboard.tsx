@@ -19,6 +19,8 @@ const parseFirestoreDate = (dateVal: any): Date => {
 interface DashboardProps {
   customers: Customer[];
   transactions: Transaction[];
+  transactionsCount: number;
+  monthlySummaries: any[];
   onOpenQuickEntry: () => void;
   onSelectCustomer: (id: string) => void;
   lang: Language;
@@ -28,6 +30,8 @@ interface DashboardProps {
 export default function Dashboard({
   customers,
   transactions,
+  transactionsCount,
+  monthlySummaries,
   onOpenQuickEntry,
   onSelectCustomer,
   lang,
@@ -147,7 +151,7 @@ export default function Dashboard({
         </div>
         <div>
           <div className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-white">
-            {formatNumber(transactions.length, lang)}
+            {formatNumber(transactionsCount, lang)}
           </div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">{t.totalTransactions}</div>
         </div>
@@ -306,7 +310,7 @@ export default function Dashboard({
  <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800/50">
  <AnalyticsManager 
  customers={customers}
- transactions={transactions}
+ monthlySummaries={monthlySummaries}
  lang={lang}
  />
  </div>

@@ -17,25 +17,26 @@ import {
 import { db, auth, OperationType } from '../firebase';
 import { Customer, Transaction, Reminder, UserSettings } from '../types';
 
-export function useLedger(userId: string | undefined, selectedDailyDate?: Date) {
- const [customers, setCustomers] = useState<Customer[]>([]);
- const [trashCustomers, setTrashCustomers] = useState<Customer[]>([]);
- const [transactions, setTransactions] = useState<Transaction[]>([]);
- const [reminders, setReminders] = useState<Reminder[]>([]);
- const [settings, setSettings] = useState<UserSettings | null>(null);
- const [loading, setLoading] = useState(true);
- const [customersSynced, setCustomersSynced] = useState(false);
- const [transactionsSynced, setTransactionsSynced] = useState(false);
- const [isOfflineFallback, setIsOfflineFallback] = useState(false);
- const [txLimit, setTxLimit] = useState(150);
- const [hasMoreTxs, setHasMoreTxs] = useState(true);
- const [archiveTransactions, setArchiveTransactions] = useState<Transaction[]>([]);
+export function useLedger(
+  userId: string | undefined, 
+  selectedDailyDate?: Date,
+  activeCustomerId?: string | null
+) {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [trashCustomers, setTrashCustomers] = useState<Customer[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [customerTransactions, setCustomerTransactions] = useState<Transaction[]>([]);
+  const [archiveTransactions, setArchiveTransactions] = useState<Transaction[]>([]);
+  const [monthlySummaries, setMonthlySummaries] = useState<any[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [customersSynced, setCustomersSynced] = useState(false);
+  const [transactionsSynced, setTransactionsSynced] = useState(false);
+  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
+  const [customerTxLimit, setCustomerTxLimit] = useState(5);
 
-  const loadMoreTransactions = () => {
-    setTxLimit(prev => prev + 150);
-  };
-
- const lastSubmitRef = useRef<{
+const lastSubmitRef = useRef<{
    timestamp: number;
    customerId: string;
    type: 'due' | 'payment';
@@ -132,7 +133,7 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
       
       // Initialize sync tracking states
       setCustomersSynced(false);
-      setTransactionsSynced(false);
+      setTransactionsSynced(true);
       
       // If we are offline, mark synced immediately to skip waiting
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -267,47 +268,64 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
  return () => unsubscribe();
  }, [userId]);
 
- // 3. Sync Transactions collection
- useEffect(() => {
- if (!userId) return;
- if (userId === 'local-guest-session' || isOfflineFallback) {
- return;
- }
+// 3. Sync Paginated Customer Transactions (only when a customer profile is open)
+  useEffect(() => {
+    if (!userId || userId === 'local-guest-session' || isOfflineFallback) {
+      return;
+    }
+    if (!activeCustomerId) {
+      setCustomerTransactions([]);
+      return;
+    }
 
- const txRef = collection(db, 'users', userId, 'transactions');
- const q = query(txRef, orderBy('date', 'desc'), limit(txLimit));
+    const txRef = collection(db, 'users', userId, 'transactions');
+    const q = query(
+      txRef,
+      where('customerId', '==', activeCustomerId),
+      orderBy('date', 'desc'),
+      limit(customerTxLimit)
+    );
 
- const unsubscribe = onSnapshot(q, (snapshot) => {
- const list: Transaction[] = [];
- snapshot.forEach((docSnap) => {
- const data = docSnap.data();
- list.push({
- ...data,
- id: docSnap.id,
- date: data.date?.toDate ? data.date.toDate() : new Date(data.date),
- createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date()),
- } as Transaction);
- });
- setTransactions(list);
- saveLocalTransactions(list);
-   if (snapshot.size < txLimit) {
-     setHasMoreTxs(false);
-   } else {
-     setHasMoreTxs(true);
-   }
-   if (!snapshot.metadata.fromCache) {
-     setTransactionsSynced(true);
-   }
-  }, (error) => {
-  console.warn("Firestore error syncing transactions, using offline cache fallback:", error);
-  loadLocalData();
-  setTransactionsSynced(true);
-  });
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: Transaction[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        list.push({
+          ...data,
+          id: docSnap.id,
+          date: data.date?.toDate ? data.date.toDate() : new Date(data.date),
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt).toISOString() : new Date()),
+        } as Transaction);
+      });
+      setCustomerTransactions(list);
+    }, (error) => {
+      console.warn("Firestore error syncing customer transactions:", error);
+    });
 
- return () => unsubscribe();
- }, [userId, txLimit]);
+    return () => unsubscribe();
+  }, [userId, activeCustomerId, customerTxLimit, isOfflineFallback]);
 
-  // 3b. Sync Daily Archive Transactions (only for past dates when online)
+  // 3a. Compute Customer Transactions locally in guest session or offline fallback
+  useEffect(() => {
+    if (!userId) return;
+    if (userId === 'local-guest-session' || isOfflineFallback) {
+      if (!activeCustomerId) {
+        setCustomerTransactions([]);
+        return;
+      }
+      const filtered = transactions
+        .filter(t => t.customerId === activeCustomerId)
+        .sort((a, b) => {
+          const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+          const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, customerTxLimit);
+      setCustomerTransactions(filtered);
+    }
+  }, [userId, transactions, activeCustomerId, customerTxLimit, isOfflineFallback]);
+
+// 3b. Sync Daily Archive Transactions (only for past dates when online)
   useEffect(() => {
     if (!userId || userId === 'local-guest-session' || isOfflineFallback || !selectedDailyDate) {
       setArchiveTransactions([]);
@@ -355,7 +373,7 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
     return () => unsubscribe();
   }, [userId, selectedDailyDate, isOfflineFallback]);
 
-  // Compute daily transactions dynamically based on date context
+// Compute daily transactions dynamically based on date context
   const dailyTransactions = useMemo(() => {
     if (!selectedDailyDate) return [];
     
@@ -378,7 +396,32 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
     return archiveTransactions;
   }, [transactions, selectedDailyDate, isOfflineFallback, userId, archiveTransactions]);
 
- // 4. Sync Reminders collection
+  // 3c. Sync Monthly Summaries (retention last 6 months)
+  useEffect(() => {
+    if (!userId || userId === 'local-guest-session' || isOfflineFallback) {
+      return;
+    }
+    const summariesRef = collection(db, 'users', userId, 'monthly_summaries');
+    const q = query(summariesRef, orderBy('__name__', 'desc'), limit(6));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = [];
+      snapshot.forEach((docSnap) => {
+        list.push({
+          id: docSnap.id,
+          ...docSnap.data()
+        });
+      });
+      setMonthlySummaries(list);
+      localStorage.setItem(`easy_due_monthly_summaries_${userId}`, JSON.stringify(list));
+    }, (error) => {
+      console.warn("Firestore error syncing monthly summaries:", error);
+    });
+
+    return () => unsubscribe();
+  }, [userId, isOfflineFallback]);
+
+  // 4. Sync Reminders collection
  useEffect(() => {
  if (!userId) return;
  if (userId === 'local-guest-session') {
@@ -515,7 +558,134 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
  };
 
  // Record a new transaction (due or payment) and update customer balance
- const addTransaction = async (
+  // Helper to adjust monthly summary documents atomically inside a batch
+  const adjustMonthlySummary = (
+    batch: any, 
+    uid: string, 
+    oldTx: Transaction | null, 
+    newTx: Transaction | null
+  ) => {
+    const getTxMonthKey = (tx: Transaction) => {
+      const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    const targetMonth = newTx ? getTxMonthKey(newTx) : (oldTx ? getTxMonthKey(oldTx) : null);
+    if (!targetMonth) return;
+
+    const summaryRef = doc(db, 'users', uid, 'monthly_summaries', targetMonth);
+
+    // Calculate changes
+    let diffDues = 0;
+    let diffPayments = 0;
+    let diffCount = 0;
+
+    if (oldTx) {
+      diffCount--;
+      if (oldTx.type === 'due') diffDues -= oldTx.amount;
+      else diffPayments -= oldTx.amount;
+    }
+    if (newTx) {
+      diffCount++;
+      if (newTx.type === 'due') diffDues += newTx.amount;
+      else diffPayments += newTx.amount;
+    }
+
+    const updates: any = {
+      dues: increment(diffDues),
+      payments: increment(diffPayments),
+      count: increment(diffCount),
+      updatedAt: serverTimestamp()
+    };
+
+    if (newTx) {
+      updates[`customerPayments.${newTx.customerId}.name`] = newTx.customerName;
+      updates[`customerPayments.${newTx.customerId}.total`] = increment(newTx.type === 'payment' ? newTx.amount : 0);
+    }
+    if (oldTx) {
+      updates[`customerPayments.${oldTx.customerId}.total`] = increment(oldTx.type === 'payment' ? -oldTx.amount : 0);
+    }
+
+    batch.set(summaryRef, updates, { merge: true });
+  };
+
+  const rebuildMonthlySummaries = async (uid: string) => {
+    if (!uid || uid === 'local-guest-session') return;
+    console.log("Rebuilding monthly summaries for user:", uid);
+    
+    try {
+      const txRef = collection(db, 'users', uid, 'transactions');
+      const qSnap = await getDocs(txRef);
+      
+      const summaries = {};
+      let totalCount = 0;
+      
+      qSnap.forEach(docSnap => {
+        const tx = docSnap.data() as Transaction;
+        tx.id = docSnap.id;
+        const d = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
+        if (isNaN(d.getTime())) return;
+        
+        totalCount++;
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (!summaries[monthKey]) {
+          summaries[monthKey] = {
+            dues: 0,
+            payments: 0,
+            count: 0,
+            customerPayments: {}
+          };
+        }
+        
+        const summary = summaries[monthKey];
+        summary.count++;
+        if (tx.type === 'due') {
+          summary.dues += tx.amount;
+        } else {
+          summary.payments += tx.amount;
+          if (!summary.customerPayments[tx.customerId]) {
+            summary.customerPayments[tx.customerId] = {
+              name: tx.customerName || 'Unknown',
+              total: 0
+            };
+          }
+          summary.customerPayments[tx.customerId].total += tx.amount;
+        }
+      });
+
+      const batch = writeBatch(db);
+      
+      // Update User Settings count
+      const userDocRef = doc(db, 'users', uid);
+      batch.set(userDocRef, {
+        transactionsCount: totalCount,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // Write each summary
+      Object.keys(summaries).forEach(monthKey => {
+        const summaryRef = doc(db, 'users', uid, 'monthly_summaries', monthKey);
+        batch.set(summaryRef, {
+          ...summaries[monthKey],
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      });
+
+      await batch.commit();
+      
+      // Update local settings count
+      if (settings) {
+        const newSettings = { ...settings, transactionsCount: totalCount };
+        setSettings(newSettings);
+        saveLocalSettings(newSettings);
+      }
+    } catch (e) {
+      console.warn("Failed to rebuild monthly summaries:", e);
+    }
+  };
+
+  const addTransaction = async (
    customerId: string, 
    type: 'due' | 'payment', 
    amount: number, 
@@ -880,18 +1050,26 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
   ) => {
     if (!userId) return;
 
-    const tx = transactions.find(t => t.id === transactionId);
+    let tx = customerTransactions.find(t => t.id === transactionId) ||
+             archiveTransactions.find(t => t.id === transactionId) ||
+             transactions.find(t => t.id === transactionId);
+
+    if (!tx) {
+      try {
+        const stored = localStorage.getItem(`easy_due_transactions_${userId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          tx = parsed.find((t: any) => t.id === transactionId);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
     if (!tx) return;
 
     const diffOld = tx.type === 'due' ? -tx.amount : tx.amount; // reverse old effect
     const diffNew = newType === 'due' ? newAmount : -newAmount; // apply new effect
     const netDiff = diffOld + diffNew;
-
-    const updatedTxs = transactions.map(t => 
-      t.id === transactionId 
-        ? { ...t, type: newType, amount: newAmount, description: newDescription.trim() } 
-        : t
-    );
 
     const updatedCustomers = customers.map(c => 
       c.id === tx.customerId 
@@ -899,10 +1077,41 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
         : c
     );
 
-    setTransactions(updatedTxs);
     setCustomers(updatedCustomers);
-    saveLocalTransactions(updatedTxs);
     saveLocalCustomers(updatedCustomers);
+
+    const updatedTx: Transaction = {
+      ...tx,
+      type: newType,
+      amount: newAmount,
+      description: newDescription.trim()
+    };
+
+    // Update local cache in localStorage
+    try {
+      const stored = localStorage.getItem(`easy_due_transactions_${userId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored).map((t: any) => {
+          if (t.id === transactionId) {
+            return {
+              ...t,
+              type: newType,
+              amount: newAmount,
+              description: newDescription.trim()
+            };
+          }
+          return t;
+        });
+        localStorage.setItem(`easy_due_transactions_${userId}`, JSON.stringify(parsed));
+      }
+    } catch (e) {
+      console.warn("Failed to update edited tx in local cache:", e);
+    }
+
+    // Update local states optimistically
+    setCustomerTransactions(prev => prev.map(t => t.id === transactionId ? updatedTx : t));
+    setArchiveTransactions(prev => prev.map(t => t.id === transactionId ? updatedTx : t));
+    setTransactions(prev => prev.map(t => t.id === transactionId ? updatedTx : t));
 
     if (userId === 'local-guest-session' || isOfflineFallback) return;
 
@@ -928,27 +1137,73 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
   const deleteTransaction = async (transactionId: string) => {
     if (!userId) return;
 
-    const tx = transactions.find(t => t.id === transactionId);
+    let tx = customerTransactions.find(t => t.id === transactionId) ||
+             archiveTransactions.find(t => t.id === transactionId) ||
+             transactions.find(t => t.id === transactionId);
+
+    if (!tx) {
+      try {
+        const stored = localStorage.getItem(`easy_due_transactions_${userId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          tx = parsed.find((t: any) => t.id === transactionId);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
     if (!tx) return;
 
     const diff = tx.type === 'due' ? -tx.amount : tx.amount;
 
-    const updatedTxs = transactions.filter(t => t.id !== transactionId);
     const updatedCustomers = customers.map(c => 
       c.id === tx.customerId 
         ? { ...c, outstandingDue: c.outstandingDue + diff, updatedAt: new Date() }
         : c
     );
 
-    setTransactions(updatedTxs);
     setCustomers(updatedCustomers);
-    saveLocalTransactions(updatedTxs);
     saveLocalCustomers(updatedCustomers);
+
+    // Delete from localStorage cache
+    try {
+      const stored = localStorage.getItem(`easy_due_transactions_${userId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored).filter((t: any) => t.id !== transactionId);
+        localStorage.setItem(`easy_due_transactions_${userId}`, JSON.stringify(parsed));
+      }
+    } catch (e) {
+      console.warn("Failed to delete transaction from local cache:", e);
+    }
+
+    // Update memory states optimistically
+    setCustomerTransactions(prev => prev.filter(t => t.id !== transactionId));
+    setArchiveTransactions(prev => prev.filter(t => t.id !== transactionId));
+    setTransactions(prev => prev.filter(t => t.id !== transactionId));
+
+    // Update settings count locally
+    if (settings) {
+      const newSettings = {
+        ...settings,
+        transactionsCount: Math.max(0, (settings.transactionsCount || 0) - 1)
+      };
+      setSettings(newSettings);
+      saveLocalSettings(newSettings);
+    }
 
     if (userId === 'local-guest-session' || isOfflineFallback) return;
 
     const batch = writeBatch(db);
     batch.delete(doc(db, 'users', userId, 'transactions', transactionId));
+
+    // Decrement total transactions count in settings
+    const userDocRef = doc(db, 'users', userId);
+    batch.update(userDocRef, {
+      transactionsCount: increment(-1),
+      updatedAt: serverTimestamp()
+    });
+
+    adjustMonthlySummary(batch, userId, tx, null);
     batch.update(doc(db, 'users', userId, 'customers', tx.customerId), {
       outstandingDue: increment(diff),
       updatedAt: serverTimestamp()
@@ -1353,9 +1608,35 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
     saveLocalCustomers([...newCustomers, ...newTrash]);
     saveLocalTransactions(newTransactions);
     saveLocalReminders(newReminders);
+
+    if (settings) {
+      const newSettings = {
+        ...settings,
+        transactionsCount: newTransactions.length
+      };
+      setSettings(newSettings);
+      saveLocalSettings(newSettings);
+    }
+
+    setTransactions(newTransactions);
+    setCustomerTransactions([]);
+    setArchiveTransactions([]);
+
+    if (!isLocal) {
+      await rebuildMonthlySummaries(userId);
+    }
   };
 
-  // 5. Automatic cleanup of trashed items older than 7 days
+  // 6. Background Migration: Initialize transaction count and monthly summaries if missing
+  useEffect(() => {
+    if (!userId || userId === 'local-guest-session' || isOfflineFallback || !settings) return;
+    if (settings.transactionsCount === undefined) {
+      console.log("Initializing transaction count and monthly summaries...");
+      rebuildMonthlySummaries(userId).catch(e => console.warn(e));
+    }
+  }, [userId, settings, isOfflineFallback]);
+
+  // 5. Automatic cleanup of trashed items older than 7 daysys
   useEffect(() => {
     if (!userId || loading || trashCustomers.length === 0) return;
 
@@ -1375,10 +1656,54 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
     }
   }, [userId, loading, trashCustomers]);
 
+  const exportBackup = async () => {
+    if (!userId) return null;
+    let allTxs: Transaction[] = [];
+    if (userId === 'local-guest-session' || isOfflineFallback) {
+      allTxs = transactions;
+    } else {
+      try {
+        const txRef = collection(db, 'users', userId, 'transactions');
+        const q = query(txRef, orderBy('date', 'desc'));
+        const querySnap = await getDocs(q);
+        querySnap.forEach((docSnap) => {
+          const data = docSnap.data();
+          allTxs.push({
+            ...data,
+            id: docSnap.id,
+            date: data.date?.toDate ? data.date.toDate().toISOString() : new Date(data.date).toISOString(),
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString()),
+          } as any);
+        });
+      } catch (err) {
+        console.warn("Failed to fetch transactions for backup:", err);
+        allTxs = transactions;
+      }
+    }
+
+    return {
+      backupTimestamp: new Date().toISOString(),
+      ownerEmail: settings?.email || 'unknown',
+      customers: customers.map(c => ({
+        name: c.name,
+        phone: c.phone,
+        outstandingDue: c.outstandingDue,
+        createdAt: c.createdAt
+      })),
+      ledgerTransactions: allTxs.map(t => ({
+        customer: t.customerName,
+        type: t.type,
+        amount: t.amount,
+        description: t.description,
+        date: t.date
+      }))
+    };
+  };
+
   return {
     customers,
     trashCustomers,
-    transactions: transactions.filter(t => customers.some(c => c.id === t.customerId)),
+    customerTransactions: customerTransactions.filter(t => customers.some(c => c.id === t.customerId)),
     dailyTransactions: dailyTransactions.filter(t => customers.some(c => c.id === t.customerId)),
     reminders: reminders.filter(r => customers.some(c => c.id === r.customerId)),
     settings,
@@ -1399,7 +1724,12 @@ export function useLedger(userId: string | undefined, selectedDailyDate?: Date) 
     permanentlyDeleteCustomer,
     emptyTrash,
     importLedgerData,
-    hasMoreTxs,
-    loadMoreTransactions
+    hasMoreCustomerTxs: customerTransactions.length === customerTxLimit,
+    customerTxLimit,
+    loadMoreCustomerTransactions: () => setCustomerTxLimit(prev => prev + 10),
+    resetCustomerTxLimit: () => setCustomerTxLimit(5),
+    monthlySummaries,
+    exportBackup,
+    rebuildMonthlySummaries: () => rebuildMonthlySummaries(userId)
   };
 }
