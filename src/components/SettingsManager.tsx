@@ -383,7 +383,7 @@ export default function SettingsManager({
  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-100 dark:border-zinc-850">
  <span className="text-3xs font-bold text-zinc-400 block uppercase">{t.totalTransactions}</span>
  <span className="text-xl font-bold text-zinc-800 dark:text-white mt-1 block">
- {formatNumber(transactions.length, lang)}
+ {formatNumber(settings?.transactionsCount || 0, lang)}
  </span>
  </div>
  </div>
