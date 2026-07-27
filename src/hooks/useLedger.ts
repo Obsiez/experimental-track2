@@ -28,6 +28,7 @@ export function useLedger(
   const [customerTransactions, setCustomerTransactions] = useState<Transaction[]>([]);
   const [archiveTransactions, setArchiveTransactions] = useState<Transaction[]>([]);
   const [monthlySummaries, setMonthlySummaries] = useState<any[]>([]);
+  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,6 +52,8 @@ const lastSubmitRef = useRef<{
  const storedTxs = localStorage.getItem(`easy_due_transactions_${userId}`);
  const storedReminders = localStorage.getItem(`easy_due_reminders_${userId}`);
  const storedSettings = localStorage.getItem(`easy_due_settings_${userId}`);
+      const storedSummaries = localStorage.getItem(`easy_due_monthly_summaries_${userId}`);
+      const storedGoals = localStorage.getItem(`easy_due_savings_goals_${userId}`);
 
  if (storedCustomers) {
  const parsed = JSON.parse(storedCustomers).map((c: any) => ({
@@ -84,7 +87,24 @@ const lastSubmitRef = useRef<{
  })));
  } else {
  setReminders([]);
- }
+      }
+
+      if (storedSummaries) {
+        setMonthlySummaries(JSON.parse(storedSummaries));
+      } else {
+        setMonthlySummaries([]);
+      }
+
+      if (storedGoals) {
+        setSavingsGoals(JSON.parse(storedGoals).map((g: any) => ({
+          ...g,
+          createdAt: new Date(g.createdAt),
+          updatedAt: new Date(g.updatedAt),
+          deposits: g.deposits.map((d: any) => ({ ...d, date: new Date(d.date) }))
+        })));
+      } else {
+        setSavingsGoals([]);
+      }
 
  if (storedSettings) {
         const parsed = JSON.parse(storedSettings);
@@ -405,6 +425,38 @@ const lastSubmitRef = useRef<{
       localStorage.setItem(`easy_due_monthly_summaries_${userId}`, JSON.stringify(list));
     }, (error) => {
       console.warn("Firestore error syncing monthly summaries:", error);
+    });
+
+    return () => unsubscribe();
+  }, [userId, isOfflineFallback]);
+
+  // 3d. Sync Savings Goals
+  useEffect(() => {
+    if (!userId || userId === 'local-guest-session' || isOfflineFallback) {
+      return;
+    }
+    const goalsRef = collection(db, 'users', userId, 'savings_goals');
+    const q = query(goalsRef, orderBy('createdAt', 'desc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: SavingsGoal[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        list.push({
+          ...data,
+          id: docSnap.id,
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
+          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt),
+          deposits: (data.deposits || []).map((d: any) => ({
+            ...d,
+            date: d.date?.toDate ? d.date.toDate() : new Date(d.date)
+          }))
+        } as SavingsGoal);
+      });
+      setSavingsGoals(list);
+      localStorage.setItem(`easy_due_savings_goals_${userId}`, JSON.stringify(list));
+    }, (error) => {
+      console.warn("Firestore error syncing savings goals:", error);
     });
 
     return () => unsubscribe();
@@ -1645,6 +1697,107 @@ const lastSubmitRef = useRef<{
     }
   }, [userId, loading, trashCustomers]);
 
+  const createSavingsGoal = async (
+    title: string, 
+    targetAmount: number, 
+    frequency: 'daily' | 'weekly' | 'monthly', 
+    duration: number
+  ) => {
+    if (!userId) return;
+    const installmentAmount = Math.round(targetAmount / duration);
+    const newGoal: SavingsGoal = {
+      id: `goal_${Date.now()}`,
+      title: title.trim(),
+      targetAmount,
+      savedAmount: 0,
+      frequency,
+      duration,
+      installmentAmount,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      status: 'active',
+      deposits: []
+    };
+
+    const updated = [newGoal, ...savingsGoals];
+    setSavingsGoals(updated);
+    localStorage.setItem(`easy_due_savings_goals_${userId}`, JSON.stringify(updated));
+
+    if (userId === 'local-guest-session' || isOfflineFallback) return;
+
+    try {
+      const goalRef = doc(db, 'users', userId, 'savings_goals', newGoal.id);
+      await setDoc(goalRef, {
+        ...newGoal,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.warn("Firestore createSavingsGoal failed:", err);
+    }
+  };
+
+  const addDepositToGoal = async (goalId: string, amount: number, notes: string = '') => {
+    if (!userId) return;
+    const goal = savingsGoals.find(g => g.id === goalId);
+    if (!goal) return;
+
+    const depositObj = {
+      id: `dep_${Date.now()}`,
+      amount,
+      date: new Date(),
+      notes: notes.trim()
+    };
+
+    const newSavedAmount = goal.savedAmount + amount;
+    const newStatus = newSavedAmount >= goal.targetAmount ? 'completed' : 'active';
+
+    const updatedGoal: SavingsGoal = {
+      ...goal,
+      savedAmount: newSavedAmount,
+      status: newStatus,
+      updatedAt: new Date(),
+      deposits: [depositObj, ...goal.deposits]
+    };
+
+    const updated = savingsGoals.map(g => g.id === goalId ? updatedGoal : g);
+    setSavingsGoals(updated);
+    localStorage.setItem(`easy_due_savings_goals_${userId}`, JSON.stringify(updated));
+
+    if (userId === 'local-guest-session' || isOfflineFallback) return;
+
+    try {
+      const goalRef = doc(db, 'users', userId, 'savings_goals', goalId);
+      await updateDoc(goalRef, {
+        savedAmount: newSavedAmount,
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+        deposits: arrayUnion({
+          ...depositObj,
+          date: serverTimestamp()
+        })
+      });
+    } catch (err) {
+      console.warn("Firestore addDepositToGoal failed:", err);
+    }
+  };
+
+  const deleteSavingsGoal = async (goalId: string) => {
+    if (!userId) return;
+    const updated = savingsGoals.filter(g => g.id !== goalId);
+    setSavingsGoals(updated);
+    localStorage.setItem(`easy_due_savings_goals_${userId}`, JSON.stringify(updated));
+
+    if (userId === 'local-guest-session' || isOfflineFallback) return;
+
+    try {
+      const goalRef = doc(db, 'users', userId, 'savings_goals', goalId);
+      await deleteDoc(goalRef);
+    } catch (err) {
+      console.warn("Firestore deleteSavingsGoal failed:", err);
+    }
+  };
+
   const exportBackup = async () => {
     if (!userId) return null;
     let allTxs: Transaction[] = [];
@@ -1718,6 +1871,10 @@ const lastSubmitRef = useRef<{
     loadMoreCustomerTransactions: () => setCustomerTxLimit(prev => prev + 10),
     resetCustomerTxLimit: () => setCustomerTxLimit(5),
     monthlySummaries,
+    savingsGoals,
+    createSavingsGoal,
+    addDepositToGoal,
+    deleteSavingsGoal,
     exportBackup,
     rebuildMonthlySummaries: () => rebuildMonthlySummaries(userId)
   };

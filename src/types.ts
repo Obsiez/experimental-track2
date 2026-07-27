@@ -54,3 +54,22 @@ export interface FirestoreErrorInfo {
  isAnonymous?: boolean | null;
  };
 }
+
+export interface SavingsGoal {
+  id: string;
+  title: string;
+  targetAmount: number;
+  savedAmount: number;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  duration: number; // Number of periods
+  installmentAmount: number;
+  createdAt: any;
+  updatedAt: any;
+  status: 'active' | 'completed';
+  deposits: {
+    id: string;
+    amount: number;
+    date: any;
+    notes?: string;
+  }[];
+}

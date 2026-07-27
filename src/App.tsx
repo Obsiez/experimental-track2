@@ -12,10 +12,11 @@ import Dashboard from './components/Dashboard';
 import CustomerManager from './components/CustomerManager';
 import RemindersManager from './components/RemindersManager';
 import SettingsManager from './components/SettingsManager';
+import SavingsGoalManager from './components/SavingsGoalManager';
 import QuickEntryModal from './components/QuickEntryModal';
 import AnalyticsManager from './components/AnalyticsManager';
 import {
-  LayoutDashboard, Users, Bell, Settings, BookOpen, Clock, Globe, Plus, Moon, Sun, ArrowUpRight, ArrowDownLeft, ChevronRight, BarChart3, ArrowLeft, ClipboardList, Lock, Loader2, Calendar
+  LayoutDashboard, Users, Bell, Settings, BookOpen, Clock, Globe, Plus, Moon, Sun, ArrowUpRight, ArrowDownLeft, ChevronRight, BarChart3, ArrowLeft, ClipboardList, Lock, Loader2, Calendar, PiggyBank
 } from 'lucide-react';
 import { showNotification } from './lib/notifications';
 import { motion, AnimatePresence } from 'motion/react';
@@ -42,7 +43,7 @@ const getLocalDateString = (date: Date): string => {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentTab, setCurrentTab] = useState<'home' | 'customers' | 'analytics' | 'reminders' | 'settings' | 'daily_transactions'>('home');
+  const [currentTab, setCurrentTab] = useState<'home' | 'customers' | 'analytics' | 'reminders' | 'settings' | 'daily_transactions' | 'goals'>('home');
   const [isQuickEntryOpen, setIsQuickEntryOpen] = useState(false);
   const [selectedCustomerIdForDetail, setSelectedCustomerIdForDetail] = useState<string | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -229,7 +230,11 @@ export default function App() {
     resetCustomerTxLimit,
     monthlySummaries,
     exportBackup,
-    rebuildMonthlySummaries
+    rebuildMonthlySummaries,
+    savingsGoals,
+    createSavingsGoal,
+    addDepositToGoal,
+    deleteSavingsGoal
   } = useLedger(user?.uid, selectedDailyDate, selectedCustomerIdForDetail);
 
   const dateInputRef = React.useRef<HTMLInputElement>(null);
@@ -595,11 +600,11 @@ export default function App() {
  {/* Quick-Entry Primary Header Trigger */}
  <button
  onClick={openQuickEntry}
- className="px-4 py-2.5 bg-emerald-600 text-white font-extrabold rounded-xl text-sm flex items-center gap-1.5 shadow-md shadow-emerald-50 dark:shadow-none hover:bg-emerald-700 transition-colors cursor-pointer"
+ className="p-2.5 bg-emerald-600 text-white font-extrabold rounded-full shadow-md shadow-emerald-50 dark:shadow-none hover:bg-emerald-700 transition-all cursor-pointer flex items-center justify-center"
  id="quick_add_header_btn"
+ title={t.recordEntry}
  >
- <Plus className="w-4.5 h-4.5 stroke-[2.5]" />
- {t.recordEntry}
+ <Plus className="w-5 h-5 stroke-[2.5]" />
  </button>
  </div>
  </div>
@@ -664,7 +669,17 @@ updateSettings={updateSettings}
  />
  )}
 
- {currentTab === 'settings' && (
+ {currentTab === 'goals' && (
+  <SavingsGoalManager 
+  savingsGoals={savingsGoals}
+  createSavingsGoal={createSavingsGoal}
+  addDepositToGoal={addDepositToGoal}
+  deleteSavingsGoal={deleteSavingsGoal}
+  lang={lang}
+  />
+  )}
+
+  {currentTab === 'settings' && (
   <SettingsManager 
           theme={theme}
           settings={settings}
@@ -900,6 +915,19 @@ updateSettings={updateSettings}
  >
  <Bell className="w-6 h-6 stroke-[2]" />
  <span className="text-2xs font-semibold">{t.reminders}</span>
+ </button>
+
+ <button
+ onClick={() => navigateTo('goals')}
+ className={`flex flex-col items-center justify-center gap-1 w-20 py-1 mx-auto cursor-pointer transition-colors ${
+ currentTab === 'goals'
+ ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
+ : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-650'
+ }`}
+ id="nav_goals_tab"
+ >
+ <PiggyBank className="w-6 h-6 stroke-[2]" />
+ <span className="text-2xs font-semibold">{t.goals}</span>
  </button>
 
  <button
