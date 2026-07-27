@@ -301,7 +301,72 @@ export default function CustomerManager({
  
   const [phoneWarningCustomer, setPhoneWarningCustomer] = useState<Customer | null>(null);
   const [pinActionCustomer, setPinActionCustomer] = useState<Customer | null>(null);
-  const [sortBy, setSortBy] = useState<'recent' | 'high_balance' | 'low_balance'>('recent');
+  const [sortBy, setSortBy] = useState<'recent' | 'high_balance' | 'low_balance' | 'custom'>('recent');
+  const [customOrder, setCustomOrder] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('customers_custom_order');
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const saveCustomOrder = (newOrder: string[]) => {
+    setCustomOrder(newOrder);
+    localStorage.setItem('customers_custom_order', JSON.stringify(newOrder));
+  };
+
+  const [draggedCustomerId, setDraggedCustomerId] = useState<string | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedCustomerId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    triggerHaptic('single');
+  };
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!draggedCustomerId || draggedCustomerId === targetId) return;
+
+    const sourceCust = customers.find(c => c.id === draggedCustomerId);
+    const targetCust = customers.find(c => c.id === targetId);
+    if (!sourceCust || !targetCust) return;
+
+    const sourcePinned = pinnedCustomerNames.includes(sourceCust.name);
+    const targetPinned = pinnedCustomerNames.includes(targetCust.name);
+
+    if (sourcePinned !== targetPinned) {
+      triggerHaptic('double');
+      toast.error(lang === 'bn' ? 'পিন করা গ্রাহকদের সাধারণ গ্রাহকদের উপরে থাকতে হবে' : 'Pinned customers must stay above unpinned customers');
+      setDraggedCustomerId(null);
+      return;
+    }
+
+    if (sortBy !== 'custom') {
+      setSortBy('custom');
+    }
+
+    const currentOrder = filteredCustomers.map(c => c.id);
+    const sourceIndex = currentOrder.indexOf(draggedCustomerId);
+    const targetIndex = currentOrder.indexOf(targetId);
+
+    if (sourceIndex !== -1 && targetIndex !== -1) {
+      const updatedOrder = [...currentOrder];
+      updatedOrder.splice(sourceIndex, 1);
+      updatedOrder.splice(targetIndex, 0, draggedCustomerId);
+      
+      saveCustomOrder(updatedOrder);
+      triggerHaptic('tick');
+      toast.success(lang === 'bn' ? 'ক্রম পরিবর্তন করা হয়েছে' : 'Reordered successfully');
+    }
+
+    setDraggedCustomerId(null);
+  };
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [pinnedCustomerNames, setPinnedCustomerNames] = useState<string[]>(() => {
     try {
@@ -537,6 +602,15 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
       if (!aPinned && bPinned) return 1;
 
       // Within same pinning status, sort by option
+if (sortBy === 'custom') {
+        const aIndex = customOrder.indexOf(a.id);
+        const bIndex = customOrder.indexOf(b.id);
+        const idxA = aIndex === -1 ? 999999 : aIndex;
+        const idxB = bIndex === -1 ? 999999 : bIndex;
+        if (idxA !== idxB) {
+          return idxA - idxB;
+        }
+      }
       if (sortBy === 'high_balance') {
         return b.outstandingDue - a.outstandingDue;
       }
@@ -553,7 +627,7 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
     });
 
     return filtered;
-  }, [customers, searchQuery, filterStatus, sortBy, pinnedCustomerNames]);
+  }, [customers, searchQuery, filterStatus, sortBy, pinnedCustomerNames, customOrder]);
 
  // Selected customer object & transactions
  const selectedCustomer = useMemo(() => {
@@ -1189,12 +1263,14 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
             onClick={() => setIsSortOpen(false)} 
           />
           <div className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in slide-in-from-top-1 duration-100">
-            {(['recent', 'high_balance', 'low_balance'] as const).map((option) => {
+            {(['recent', 'high_balance', 'low_balance', 'custom'] as const).map((option) => {
                const label = option === 'recent'
-                 ? (lang === 'bn' ? 'সাম্প্রতিক (Recent)' : 'Recent')
-                 : option === 'high_balance'
-                   ? (lang === 'bn' ? 'বেশি বাকি (High Due)' : 'High Balance')
-                   : (lang === 'bn' ? 'কম বাকি (Low Due)' : 'Low Balance');
+                  ? (lang === 'bn' ? 'সাম্প্রতিক (Recent)' : 'Recent')
+                  : option === 'high_balance'
+                    ? (lang === 'bn' ? 'বেশি বাকি (High Due)' : 'High Balance')
+                    : option === 'low_balance'
+                      ? (lang === 'bn' ? 'কম বাকি (Low Due)' : 'Low Balance')
+                      : (lang === 'bn' ? 'পছন্দসই সাজানো (Custom)' : 'Custom Order');
                return (
                  <button
                    key={option}
@@ -1247,11 +1323,15 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 				onClick={() => {
 					setSelectedCustomerId(selectedCustomerId === c.id ? null : c.id);
 				}}
+				draggable="true"
+				onDragStart={(e) => handleDragStart(e, c.id)}
+				onDragOver={(e) => handleDragOver(e, c.id)}
+				onDrop={(e) => handleDrop(e, c.id)}
 				className={`bg-white dark:bg-zinc-900 border p-5 rounded-2xl shadow-md hover:shadow-md transition-all cursor-pointer flex items-center justify-between group ${
 					selectedCustomerId === c.id 
 						? 'border-emerald-500 ring-2 ring-emerald-500/20 dark:ring-emerald-400/20' 
 						: 'border-zinc-200 dark:border-zinc-800'
-				}`}
+				} ${draggedCustomerId === c.id ? 'opacity-40 border-dashed border-emerald-500 bg-emerald-50/5' : ''}`}
 			>
 				<div className="min-w-0 pr-2">
 					<div 

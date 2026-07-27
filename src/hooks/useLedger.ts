@@ -1625,17 +1625,17 @@ const lastSubmitRef = useRef<{
     }
   }, [userId, settings, isOfflineFallback]);
 
-  // 5. Automatic cleanup of trashed items older than 7 daysys
+  // 5. Automatic cleanup of trashed items older than 14 days
   useEffect(() => {
     if (!userId || loading || trashCustomers.length === 0) return;
 
     const now = new Date().getTime();
-    const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+    const fourteenDaysInMs = 14 * 24 * 60 * 60 * 1000;
     
     const expiredCustomers = trashCustomers.filter(c => {
       if (!c.deletedAt) return false;
       const deletedTime = new Date(c.deletedAt).getTime();
-      return (now - deletedTime) > sevenDaysInMs;
+      return (now - deletedTime) > fourteenDaysInMs;
     });
 
     if (expiredCustomers.length > 0) {
