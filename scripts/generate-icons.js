@@ -40,13 +40,13 @@ async function generate() {
   console.log('Generated icon-192.png');
 
   // 3. icon-512-maskable.png (square, maskable)
-  await sharp(Buffer.from(svgSquare))
+  await sharp(Buffer.from(svgRounded))
     .resize(512, 512)
     .toFile(path.join(publicDir, 'icon-512-maskable.png'));
   console.log('Generated icon-512-maskable.png');
 
   // 4. icon-192-maskable.png (square, maskable)
-  await sharp(Buffer.from(svgSquare))
+  await sharp(Buffer.from(svgRounded))
     .resize(192, 192)
     .toFile(path.join(publicDir, 'icon-192-maskable.png'));
   console.log('Generated icon-192-maskable.png');

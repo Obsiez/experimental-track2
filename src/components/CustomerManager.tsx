@@ -3,7 +3,8 @@ import { Customer, Transaction } from '../types';
 import { 
 	Search, UserPlus, Phone, ArrowUpRight, ArrowDownLeft, ReceiptText, ChevronDown, ChevronUp, Pin, 
 	MessageSquare, Trash2, Pencil, RefreshCw, X, UserMinus, Plus, ShieldCheck, CheckCircle2, 
-	AlertTriangle, ArrowLeftRight, Check, Trash, Users, Send, ArrowLeft, ArrowUpDown, Delete
+	AlertTriangle, ArrowLeftRight, Check, Trash, Users, Send, ArrowLeft, ArrowUpDown, Delete,
+	Printer, BookUser
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
@@ -565,6 +566,288 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
     return transactions.filter(t => t.customerId === selectedCustomerId);
   }, [transactions, selectedCustomerId]);
 
+  const handlePickContact = async (onPick: (phone: string) => void) => {
+    if ('contacts' in navigator && 'ContactsManager' in window) {
+      try {
+        const props = ['tel'];
+        const options = { multiple: false };
+        const contacts = await (navigator as any).contacts.select(props, options);
+        if (contacts && contacts.length > 0 && contacts[0].tel && contacts[0].tel.length > 0) {
+          const rawPhone = contacts[0].tel[0];
+          const cleaned = rawPhone.replace(/[^\d+]/g, '');
+          onPick(cleaned);
+          triggerHaptic('single');
+        }
+      } catch (err) {
+        console.warn("Contact picker failed:", err);
+      }
+    }
+  };
+
+  const handlePrintTransactions = () => {
+    if (!selectedCustomer) return;
+    
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+    
+    const customerName = selectedCustomer.name;
+    const customerPhone = selectedCustomer.phone || 'N/A';
+    const outstandingDue = selectedCustomer.outstandingDue;
+    
+    const rowsHtml = selectedCustomerTransactions.map((tx, idx) => {
+      const txDate = parseFirestoreDate(tx.date);
+      const dateStr = txDate.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const timeStr = txDate.toLocaleTimeString(lang === 'bn' ? 'bn-BD' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+      const typeStr = tx.type === 'due' ? (lang === 'bn' ? 'বকেয়া' : 'Due') : (lang === 'bn' ? 'জমা' : 'Payment');
+      const amountStr = `৳ ${formatNumber(tx.amount, lang)}`;
+      const typeClass = tx.type === 'due' ? 'text-red' : 'text-green';
+      
+      return `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${dateStr} <span class="time-text">${timeStr}</span></td>
+          <td>${tx.description || '-'}</td>
+          <td class="${typeClass} font-bold">${typeStr}</td>
+          <td class="${typeClass} font-black">${tx.type === 'due' ? '+' : '-'} ${amountStr}</td>
+        </tr>
+      `;
+    }).join('');
+    
+    const titleText = lang === 'bn' ? 'লেনদেন রিপোর্ট' : 'Transaction Report';
+    const clientDetailsText = lang === 'bn' ? 'গ্রাহকের বিবরণ' : 'Client Details';
+    const nameLabel = lang === 'bn' ? 'নাম:' : 'Name:';
+    const phoneLabel = lang === 'bn' ? 'মোবাইল:' : 'Phone:';
+    const statusLabel = lang === 'bn' ? 'বর্তমান অবস্থা:' : 'Current Status:';
+    const totalDuesLabel = lang === 'bn' ? 'মোট বকেয়া লিখন' : 'Total Due Added';
+    const totalPaymentsLabel = lang === 'bn' ? 'মোট জমা লিখন' : 'Total Paid';
+    const totalTransactionsText = lang === 'bn' ? 'মোট লেনদেনের বিবরণ' : 'Transactions Log';
+    
+    const totalDuesCalculated = selectedCustomerTransactions
+      .filter(tx => tx.type === 'due')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+      
+    const totalPaymentsCalculated = selectedCustomerTransactions
+      .filter(tx => tx.type === 'payment')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+      
+    const reportHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${customerName} - ${titleText}</title>
+        <style>
+          body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #1c1917;
+            padding: 20px;
+            margin: 0;
+            line-height: 1.4;
+          }
+          .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e7e5e4;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+          }
+          .title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #059669;
+          }
+          .meta-info {
+            text-align: right;
+            font-size: 12px;
+            color: #78716c;
+          }
+          .details-card {
+            background-color: #fafaf9;
+            border: 1px solid #e7e5e4;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+          }
+          .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+          }
+          .detail-item {
+            font-size: 14px;
+          }
+          .detail-label {
+            font-weight: 700;
+            color: #78716c;
+            margin-right: 5px;
+          }
+          .detail-value {
+            font-weight: 800;
+          }
+          .summary-boxes {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+          }
+          .summary-box {
+            flex: 1;
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid #e7e5e4;
+            text-align: center;
+          }
+          .summary-box.due {
+            background-color: #fef2f2;
+            border-color: #fca5a5;
+            color: #dc2626;
+          }
+          .summary-box.payment {
+            background-color: #ecfdf5;
+            border-color: #6ee7b7;
+            color: #059669;
+          }
+          .summary-box.balance {
+            background-color: #f5f5f4;
+            border-color: #d6d3d1;
+          }
+          .summary-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+          }
+          .summary-value {
+            font-size: 20px;
+            font-weight: 900;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+          }
+          th {
+            background-color: #f5f5f4;
+            border-bottom: 2px solid #e7e5e4;
+            padding: 10px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #78716c;
+          }
+          td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #f5f5f4;
+            font-size: 13px;
+          }
+          .time-text {
+            color: #a8a29e;
+            font-size: 11px;
+            margin-left: 5px;
+          }
+          .text-red {
+            color: #dc2626;
+          }
+          .text-green {
+            color: #059669;
+          }
+          .font-bold {
+            font-weight: 700;
+          }
+          .font-black {
+            font-weight: 900;
+          }
+          @media print {
+            body {
+              padding: 0;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="title">Challan Track</div>
+            <div style="font-size: 12px; color: #78716c; margin-top: 2px;">${titleText}</div>
+          </div>
+          <div class="meta-info">
+            <div>Date: ${new Date().toLocaleDateString()}</div>
+            <div>Time: ${new Date().toLocaleTimeString()}</div>
+          </div>
+        </div>
+        
+        <div class="details-card">
+          <div style="font-size: 14px; font-weight: 800; margin-bottom: 10px; border-bottom: 1px solid #e7e5e4; padding-bottom: 5px;">${clientDetailsText}</div>
+          <div class="details-grid">
+            <div class="detail-item">
+              <span class="detail-label">${nameLabel}</span>
+              <span class="detail-value">${customerName}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">${phoneLabel}</span>
+              <span class="detail-value">${customerPhone}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="summary-boxes">
+          <div class="summary-box due">
+            <div class="summary-label">${totalDuesLabel}</div>
+            <div class="summary-value">+ ৳ ${formatNumber(totalDuesCalculated, lang)}</div>
+          </div>
+          <div class="summary-box payment">
+            <div class="summary-label">${totalPaymentsLabel}</div>
+            <div class="summary-value">- ৳ ${formatNumber(totalPaymentsCalculated, lang)}</div>
+          </div>
+          <div class="summary-box balance">
+            <div class="summary-label">${statusLabel}</div>
+            <div class="summary-value" style="color: ${outstandingDue > 0 ? '#dc2626' : (outstandingDue < 0 ? '#059669' : '#1c1917')}">
+              ${outstandingDue > 0 ? (lang === 'bn' ? '৳ ' + formatNumber(outstandingDue, lang) + ' বকেয়া' : '৳ ' + formatNumber(outstandingDue, lang) + ' Due') : (outstandingDue < 0 ? (lang === 'bn' ? '৳ ' + formatNumber(Math.abs(outstandingDue), lang) + ' অগ্রিম জমা' : '৳ ' + formatNumber(Math.abs(outstandingDue), lang) + ' Surplus') : (lang === 'bn' ? 'পরিশোধিত' : 'Settled'))}
+            </div>
+          </div>
+        </div>
+        
+        <div style="font-size: 15px; font-weight: 800; border-bottom: 2px solid #059669; padding-bottom: 5px; margin-top: 20px;">${totalTransactionsText}</div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 8%;">SL</th>
+              <th style="width: 25%;">Date & Time</th>
+              <th style="width: 35%;">Description</th>
+              <th style="width: 15%;">Type</th>
+              <th style="width: 17%;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+    
+    doc.open();
+    doc.write(reportHtml);
+    doc.close();
+    
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 1000);
+  };
+
   const groupedTransactions = useMemo(() => {
     const groups = {};
     selectedCustomerTransactions.forEach(tx => {
@@ -750,13 +1033,25 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  </div>
  <div className="space-y-1">
  <label className="text-xs font-bold text-zinc-500 uppercase">{t.phoneNumber}</label>
- <input
- type="tel"
- placeholder={t.phoneSmsNotice}
- value={newPhone}
- onChange={(e) => setNewPhone(e.target.value)}
- className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-800 dark:text-white text-base focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
- />
+ <div className="flex gap-2">
+  <input
+  type="tel"
+  placeholder={t.phoneSmsNotice}
+  value={newPhone}
+  onChange={(e) => setNewPhone(e.target.value)}
+  className="flex-1 px-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-800 dark:text-white text-base focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
+  />
+  {('contacts' in navigator && 'ContactsManager' in window) && (
+    <button
+      type="button"
+      onClick={() => handlePickContact(setNewPhone)}
+      className="px-3.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-center cursor-pointer transition-colors shadow-sm shrink-0"
+      title={lang === 'bn' ? 'কন্টাক্ট নির্বাচন করুন' : 'Pick Contact'}
+    >
+      <BookUser className="w-5 h-5" />
+    </button>
+  )}
+  </div>
  </div>
  </div>
 
@@ -771,14 +1066,14 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  <button
  type="button"
  onClick={() => setShowAddForm(false)}
- className="px-5 py-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold rounded-xl"
+ className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold rounded-xl text-sm transition-colors"
  >
  {t.cancel}
  </button>
  <button
  type="submit"
  disabled={isCreatingCustomer}
- className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl disabled:opacity-70 disabled:cursor-not-allowed"
+ className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl disabled:opacity-70 disabled:cursor-not-allowed text-sm transition-colors"
  >
  {isCreatingCustomer ? (
  <span className="flex items-center gap-2">
@@ -1047,6 +1342,14 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
       </button>
       <button
         type="button"
+        onClick={handlePrintTransactions}
+        className="p-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-755 text-zinc-655 border border-zinc-200 dark:border-zinc-700 rounded-full transition-all cursor-pointer flex items-center justify-center shadow-md animate-in fade-in"
+        title={lang === 'bn' ? 'রিপোর্ট প্রিন্ট করুন' : 'Print Report'}
+      >
+        <Printer className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+      </button>
+      <button
+        type="button"
         onClick={() => {
           setEditName(selectedCustomer.name);
           setEditPhone(selectedCustomer.phone || '');
@@ -1084,14 +1387,26 @@ const [editingTx, setEditingTx] = useState<Transaction | null>(null);
  <label className="block text-2xs font-extrabold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-1">
  {lang === 'bn' ? 'মোবাইল নম্বর' : 'Mobile Number'}
  </label>
- <input
+ <div className="flex gap-2">
+    <input
       type="tel"
       id="edit_customer_phone"
       value={editPhone}
- onChange={(e) => setEditPhone(e.target.value)}
- className="w-full px-3 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white focus:outline-none focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 text-base font-extrabold"
- placeholder={lang === 'bn' ? 'যেমন: ০১৭...' : 'e.g. 017...'}
- />
+      onChange={(e) => setEditPhone(e.target.value)}
+      className="flex-1 px-3 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white focus:outline-none focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 text-base font-extrabold"
+      placeholder={lang === 'bn' ? 'যেমন: ০১৭...' : 'e.g. 017...'}
+    />
+    {('contacts' in navigator && 'ContactsManager' in window) && (
+      <button
+        type="button"
+        onClick={() => handlePickContact(setEditPhone)}
+        className="px-3.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-650 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-center cursor-pointer transition-colors shadow-sm shrink-0"
+        title={lang === 'bn' ? 'কন্টাক্ট নির্বাচন করুন' : 'Pick Contact'}
+      >
+        <BookUser className="w-5 h-5" />
+      </button>
+    )}
+  </div>
  </div>
  {editError && (
  <p className="text-xs font-bold text-rose-600 dark:text-rose-400">{editError}</p>

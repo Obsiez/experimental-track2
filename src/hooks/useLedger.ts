@@ -130,6 +130,7 @@ const lastSubmitRef = useRef<{
   useEffect(() => {
     if (userId) {
       loadLocalData();
+      setLoading(false);
       
       // Initialize sync tracking states
       setCustomersSynced(false);
@@ -156,21 +157,9 @@ const lastSubmitRef = useRef<{
       setSettings(null);
       setCustomersSynced(true);
       setTransactionsSynced(true);
+      setLoading(false);
     }
   }, [userId]);
-
-  // Monitor sync states to end loading
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-    if (customersSynced && transactionsSynced) {
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
-  }, [userId, customersSynced, transactionsSynced]);
 
  // 1. Sync User settings
  useEffect(() => {
