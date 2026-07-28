@@ -554,8 +554,8 @@ export default function SettingsManager({
         </h2>
         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
           {lang === 'bn' 
-            ? 'ভুলবশত মুছে ফেলা গ্রাহক এখান থেকে উদ্ধার করা যাবে। ৭ দিন পর স্থায়ীভাবে ডিলিট হবে।' 
-            : 'Recover mistakenly deleted customers. Items are automatically permanently deleted after 7 days.'}
+            ? 'ভুলবশত মুছে ফেলা গ্রাহক এখান থেকে উদ্ধার করা যাবে। ১৪ দিন পর স্থায়ীভাবে ডিলিট হবে।' 
+            : 'Recover mistakenly deleted customers. Items are automatically permanently deleted after 14 days.'}
         </p>
       </div>
 
@@ -575,7 +575,7 @@ export default function SettingsManager({
         {trashCustomers.map(c => {
           const deletionTime = c.deletedAt ? new Date(c.deletedAt).getTime() : new Date().getTime();
           const msPassed = new Date().getTime() - deletionTime;
-          const daysRemaining = Math.max(1, 7 - Math.floor(msPassed / (24 * 60 * 60 * 1000)));
+          const daysRemaining = Math.max(1, 14 - Math.floor(msPassed / (24 * 60 * 60 * 1000)));
 
           return (
             <div 

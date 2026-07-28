@@ -28,7 +28,12 @@ export function useLedger(
   const [customerTransactions, setCustomerTransactions] = useState<Transaction[]>([]);
   const [archiveTransactions, setArchiveTransactions] = useState<Transaction[]>([]);
   const [monthlySummaries, setMonthlySummaries] = useState<any[]>([]);
-  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
+  const [goals, setGoals] = useState<SavingGoal[]>([]);
+  const [goalsSynced, setGoalsSynced] = useState(false);
+
+  const saveLocalGoals = (list: SavingGoal[]) => {
+    localStorage.setItem(`easy_due_goals_${userId}`, JSON.stringify(list));
+  };
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +58,7 @@ const lastSubmitRef = useRef<{
  const storedReminders = localStorage.getItem(`easy_due_reminders_${userId}`);
  const storedSettings = localStorage.getItem(`easy_due_settings_${userId}`);
       const storedSummaries = localStorage.getItem(`easy_due_monthly_summaries_${userId}`);
-      const storedGoals = localStorage.getItem(`easy_due_savings_goals_${userId}`);
+      const storedGoals = localStorage.getItem(`easy_due_goals_${userId}`);
 
  if (storedCustomers) {
  const parsed = JSON.parse(storedCustomers).map((c: any) => ({
@@ -96,14 +101,13 @@ const lastSubmitRef = useRef<{
       }
 
       if (storedGoals) {
-        setSavingsGoals(JSON.parse(storedGoals).map((g: any) => ({
+        setGoals(JSON.parse(storedGoals).map((g: any) => ({
           ...g,
           createdAt: new Date(g.createdAt),
-          updatedAt: new Date(g.updatedAt),
-          deposits: g.deposits.map((d: any) => ({ ...d, date: new Date(d.date) }))
+          updatedAt: new Date(g.updatedAt)
         })));
       } else {
-        setSavingsGoals([]);
+        setGoals([]);
       }
 
  if (storedSettings) {
@@ -430,37 +434,49 @@ const lastSubmitRef = useRef<{
     return () => unsubscribe();
   }, [userId, isOfflineFallback]);
 
-  // 3d. Sync Savings Goals
+// Sync Goals collection
   useEffect(() => {
-    if (!userId || userId === 'local-guest-session' || isOfflineFallback) {
+    if (!userId) return;
+    if (userId === 'local-guest-session') {
       return;
     }
-    const goalsRef = collection(db, 'users', userId, 'savings_goals');
+
+    const goalsRef = collection(db, 'users', userId, 'goals');
     const q = query(goalsRef, orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: SavingsGoal[] = [];
+      const list: SavingGoal[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
         list.push({
           ...data,
           id: docSnap.id,
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
-          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt),
-          deposits: (data.deposits || []).map((d: any) => ({
-            ...d,
-            date: d.date?.toDate ? d.date.toDate() : new Date(d.date)
-          }))
-        } as SavingsGoal);
+          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt)
+        } as SavingGoal);
       });
-      setSavingsGoals(list);
-      localStorage.setItem(`easy_due_savings_goals_${userId}`, JSON.stringify(list));
+      setGoals(list);
+      saveLocalGoals(list);
+      setGoalsSynced(true);
     }, (error) => {
-      console.warn("Firestore error syncing savings goals:", error);
+      console.warn("Firestore error syncing goals, using offline cache fallback:", error);
+      try {
+        const stored = localStorage.getItem(`easy_due_goals_${userId}`);
+        if (stored) {
+          setGoals(JSON.parse(stored).map((g: any) => ({
+            ...g,
+            createdAt: new Date(g.createdAt),
+            updatedAt: new Date(g.updatedAt)
+          })));
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+      setGoalsSynced(true);
     });
 
     return () => unsubscribe();
-  }, [userId, isOfflineFallback]);
+  }, [userId]);
 
   // 4. Sync Reminders collection
  useEffect(() => {
@@ -1697,104 +1713,153 @@ const lastSubmitRef = useRef<{
     }
   }, [userId, loading, trashCustomers]);
 
-  const createSavingsGoal = async (
-    title: string, 
-    targetAmount: number, 
-    frequency: 'daily' | 'weekly' | 'monthly', 
-    duration: number
+  // Goal CRUD actions
+  const createGoal = async (
+    title: string,
+    targetAmount: number,
+    frequency: 'daily' | 'weekly' | 'monthly' | 'flexible',
+    installmentAmount?: number,
+    type: 'savings' | 'deposit' = 'savings',
+    customerId?: string,
+    customerName?: string
   ) => {
-    if (!userId) return;
-    const installmentAmount = Math.round(targetAmount / duration);
-    const newGoal: SavingsGoal = {
-      id: `goal_${Date.now()}`,
+    if (!userId) return null;
+    const customGoalId = doc(collection(db, 'temp')).id;
+    const newGoal: SavingGoal = {
+      id: customGoalId,
+      userId,
       title: title.trim(),
       targetAmount,
       savedAmount: 0,
       frequency,
-      duration,
       installmentAmount,
+      type,
+      customerId,
+      customerName,
+      status: 'active',
       createdAt: new Date(),
       updatedAt: new Date(),
-      status: 'active',
-      deposits: []
+      contributions: []
     };
 
-    const updated = [newGoal, ...savingsGoals];
-    setSavingsGoals(updated);
-    localStorage.setItem(`easy_due_savings_goals_${userId}`, JSON.stringify(updated));
+    const updatedGoals = [newGoal, ...goals];
+    setGoals(updatedGoals);
+    saveLocalGoals(updatedGoals);
 
-    if (userId === 'local-guest-session' || isOfflineFallback) return;
+    if (userId === 'local-guest-session' || isOfflineFallback) {
+      return customGoalId;
+    }
 
+    const goalDocRef = doc(db, 'users', userId, 'goals', customGoalId);
     try {
-      const goalRef = doc(db, 'users', userId, 'savings_goals', newGoal.id);
-      await setDoc(goalRef, {
+      await setDoc(goalDocRef, {
         ...newGoal,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+      return customGoalId;
     } catch (err) {
-      console.warn("Firestore createSavingsGoal failed:", err);
+      console.warn("Firestore createGoal failed, saved locally:", err);
+      return customGoalId;
     }
   };
 
-  const addDepositToGoal = async (goalId: string, amount: number, notes: string = '') => {
+  const addGoalContribution = async (
+    goalId: string,
+    amount: number,
+    note: string = '',
+    recordAsCustomerTransaction: boolean = false
+  ) => {
     if (!userId) return;
-    const goal = savingsGoals.find(g => g.id === goalId);
+
+    const goal = goals.find(g => g.id === goalId);
     if (!goal) return;
 
-    const depositObj = {
-      id: `dep_${Date.now()}`,
+    const contributionId = doc(collection(db, 'temp')).id;
+    const newContribution: GoalContribution = {
+      id: contributionId,
       amount,
-      date: new Date(),
-      notes: notes.trim()
+      date: new Date().toISOString(),
+      note: note.trim()
     };
 
+    const updatedContributions = [...goal.contributions, newContribution];
     const newSavedAmount = goal.savedAmount + amount;
-    const newStatus = newSavedAmount >= goal.targetAmount ? 'completed' : 'active';
+    const isCompleted = newSavedAmount >= goal.targetAmount;
+    const newStatus = isCompleted ? 'completed' as const : goal.status;
 
-    const updatedGoal: SavingsGoal = {
-      ...goal,
-      savedAmount: newSavedAmount,
-      status: newStatus,
-      updatedAt: new Date(),
-      deposits: [depositObj, ...goal.deposits]
-    };
+    const updatedGoals = goals.map(g => 
+      g.id === goalId 
+        ? { ...g, savedAmount: newSavedAmount, status: newStatus, contributions: updatedContributions, updatedAt: new Date() }
+        : g
+    );
 
-    const updated = savingsGoals.map(g => g.id === goalId ? updatedGoal : g);
-    setSavingsGoals(updated);
-    localStorage.setItem(`easy_due_savings_goals_${userId}`, JSON.stringify(updated));
+    setGoals(updatedGoals);
+    saveLocalGoals(updatedGoals);
+
+    // Handle optional ledger recording (Recommended Settings: log as gotCash/payment transaction)
+    if (recordAsCustomerTransaction && goal.customerId && goal.customerName) {
+      await addTransaction(
+        goal.customerId,
+        'payment',
+        amount,
+        note.trim() || `${note.trim() || 'Installment'} - ${goal.title}`,
+        new Date(),
+        { name: goal.customerName, phone: '' }
+      );
+    }
 
     if (userId === 'local-guest-session' || isOfflineFallback) return;
 
+    const goalDocRef = doc(db, 'users', userId, 'goals', goalId);
     try {
-      const goalRef = doc(db, 'users', userId, 'savings_goals', goalId);
-      await updateDoc(goalRef, {
+      await updateDoc(goalDocRef, {
         savedAmount: newSavedAmount,
         status: newStatus,
-        updatedAt: serverTimestamp(),
-        deposits: arrayUnion({
-          ...depositObj,
-          date: serverTimestamp()
-        })
+        contributions: updatedContributions,
+        updatedAt: serverTimestamp()
       });
     } catch (err) {
-      console.warn("Firestore addDepositToGoal failed:", err);
+      console.warn("Firestore addGoalContribution failed, saved locally:", err);
     }
   };
 
-  const deleteSavingsGoal = async (goalId: string) => {
+  const deleteGoal = async (goalId: string) => {
     if (!userId) return;
-    const updated = savingsGoals.filter(g => g.id !== goalId);
-    setSavingsGoals(updated);
-    localStorage.setItem(`easy_due_savings_goals_${userId}`, JSON.stringify(updated));
+
+    const updatedGoals = goals.filter(g => g.id !== goalId);
+    setGoals(updatedGoals);
+    saveLocalGoals(updatedGoals);
 
     if (userId === 'local-guest-session' || isOfflineFallback) return;
 
+    const goalDocRef = doc(db, 'users', userId, 'goals', goalId);
     try {
-      const goalRef = doc(db, 'users', userId, 'savings_goals', goalId);
-      await deleteDoc(goalRef);
+      await deleteDoc(goalDocRef);
     } catch (err) {
-      console.warn("Firestore deleteSavingsGoal failed:", err);
+      console.warn("Firestore deleteGoal failed, saved locally:", err);
+    }
+  };
+
+  const updateGoalStatus = async (goalId: string, status: 'active' | 'completed' | 'cancelled') => {
+    if (!userId) return;
+
+    const updatedGoals = goals.map(g => 
+      g.id === goalId ? { ...g, status, updatedAt: new Date() } : g
+    );
+    setGoals(updatedGoals);
+    saveLocalGoals(updatedGoals);
+
+    if (userId === 'local-guest-session' || isOfflineFallback) return;
+
+    const goalDocRef = doc(db, 'users', userId, 'goals', goalId);
+    try {
+      await updateDoc(goalDocRef, {
+        status,
+        updatedAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.warn("Firestore updateGoalStatus failed, saved locally:", err);
     }
   };
 
@@ -1871,10 +1936,12 @@ const lastSubmitRef = useRef<{
     loadMoreCustomerTransactions: () => setCustomerTxLimit(prev => prev + 10),
     resetCustomerTxLimit: () => setCustomerTxLimit(5),
     monthlySummaries,
-    savingsGoals,
-    createSavingsGoal,
-    addDepositToGoal,
-    deleteSavingsGoal,
+    goals,
+    goalsSynced,
+    createGoal,
+    addGoalContribution,
+    deleteGoal,
+    updateGoalStatus,
     exportBackup,
     rebuildMonthlySummaries: () => rebuildMonthlySummaries(userId)
   };

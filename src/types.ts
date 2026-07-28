@@ -55,21 +55,27 @@ export interface FirestoreErrorInfo {
  };
 }
 
-export interface SavingsGoal {
+export interface GoalContribution {
   id: string;
+  amount: number;
+  date: string; // ISO string
+  note?: string;
+}
+
+export interface SavingGoal {
+  id: string;
+  userId: string;
+  customerId?: string;
+  customerName?: string;
   title: string;
   targetAmount: number;
   savedAmount: number;
-  frequency: 'daily' | 'weekly' | 'monthly';
-  duration: number; // Number of periods
-  installmentAmount: number;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'flexible';
+  installmentAmount?: number;
+  notes?: string;
+  status: 'active' | 'completed' | 'cancelled';
   createdAt: any;
   updatedAt: any;
-  status: 'active' | 'completed';
-  deposits: {
-    id: string;
-    amount: number;
-    date: any;
-    notes?: string;
-  }[];
+  type: 'savings' | 'deposit';
+  contributions: GoalContribution[];
 }

@@ -29,6 +29,8 @@ interface SwipeableCustomerItemProps {
 	swipeGesturesEnabled: boolean;
 	isDeleting: boolean;
 	children: React.ReactNode;
+	activeSwipingId: string | null;
+	setActiveSwipingId: (id: string | null) => void;
 }
 
 const SwipeableCustomerItem = ({
@@ -40,7 +42,9 @@ const SwipeableCustomerItem = ({
 	onDelete,
 	swipeGesturesEnabled,
 	isDeleting,
-	children
+	children,
+	activeSwipingId,
+	setActiveSwipingId
 }: SwipeableCustomerItemProps) => {
 	const cardRef = React.useRef<HTMLDivElement>(null);
 	const controls = useAnimation();
@@ -66,6 +70,7 @@ const SwipeableCustomerItem = ({
 			}).then(() => {
 				setSwipeDir(null);
 				setIsSwiping(false);
+				setActiveSwipingId(null);
 			});
 		}
 	}, [isDeleting, controls]);
@@ -89,17 +94,20 @@ const SwipeableCustomerItem = ({
 					setSwipeDir(null);
 					setIsSwiping(false);
 					isSnappingRef.current = false;
+					setActiveSwipingId(null);
 				});
 			} else {
 				// Delete action: trigger and let the isDeleting prop control the open state/closing
 				onDelete();
 				isSnappingRef.current = false;
+				setActiveSwipingId(null);
 			}
 		});
 	};
 
 	const handleTouchStart = (e: React.TouchEvent) => {
 		if (!swipeGesturesEnabled || isSnappingRef.current || isDeleting) return;
+		if (activeSwipingId !== null && activeSwipingId !== customer.id) return;
 		setStartX(e.touches[0].clientX);
 		setStartY(e.touches[0].clientY);
 		setIsSwiping(false);
@@ -115,6 +123,7 @@ const SwipeableCustomerItem = ({
 			// Accidental diagonal scrolls check: require diffX to be greater than diffY, and at least 15px threshold to activate swipe.
 			if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 15) {
 				setIsSwiping(true);
+				setActiveSwipingId(customer.id);
 			}
 		}
 
@@ -165,6 +174,7 @@ const SwipeableCustomerItem = ({
 				setSwipeDir(null);
 				setIsSwiping(false);
 				setHasVibrated(false);
+				setActiveSwipingId(null);
 			});
 		}
 	};
@@ -317,6 +327,8 @@ export default function CustomerManager({
   };
 
   const [draggedCustomerId, setDraggedCustomerId] = useState<string | null>(null);
+  const [draggedOverCustomerId, setDraggedOverCustomerId] = useState<string | null>(null);
+  const [activeSwipingId, setActiveSwipingId] = useState<string | null>(null);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedCustomerId(id);
@@ -327,10 +339,24 @@ export default function CustomerManager({
   const handleDragOver = (e: React.DragEvent, id: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    if (draggedCustomerId === id) return;
+    if (draggedOverCustomerId !== id) {
+      setDraggedOverCustomerId(id);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDraggedOverCustomerId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedCustomerId(null);
+    setDraggedOverCustomerId(null);
   };
 
   const handleDrop = (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
+    setDraggedOverCustomerId(null);
     if (!draggedCustomerId || draggedCustomerId === targetId) return;
 
     const sourceCust = customers.find(c => c.id === draggedCustomerId);
@@ -1318,6 +1344,8 @@ if (sortBy === 'custom') {
 				handleDelete(c);
 			}}
 			onClick={() => {}}
+			activeSwipingId={activeSwipingId}
+			setActiveSwipingId={setActiveSwipingId}
 		>
 			<div
 				onClick={() => {
@@ -1326,12 +1354,20 @@ if (sortBy === 'custom') {
 				draggable="true"
 				onDragStart={(e) => handleDragStart(e, c.id)}
 				onDragOver={(e) => handleDragOver(e, c.id)}
+				onDragLeave={handleDragLeave}
+				onDragEnd={handleDragEnd}
 				onDrop={(e) => handleDrop(e, c.id)}
 				className={`bg-white dark:bg-zinc-900 border p-5 rounded-2xl shadow-md hover:shadow-md transition-all cursor-pointer flex items-center justify-between group ${
 					selectedCustomerId === c.id 
 						? 'border-emerald-500 ring-2 ring-emerald-500/20 dark:ring-emerald-400/20' 
 						: 'border-zinc-200 dark:border-zinc-800'
-				} ${draggedCustomerId === c.id ? 'opacity-40 border-dashed border-emerald-500 bg-emerald-50/5' : ''}`}
+				} ${
+					draggedCustomerId === c.id 
+						? 'opacity-30 border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-100/10' 
+						: draggedOverCustomerId === c.id
+							? 'border-2 border-emerald-500 border-dashed bg-emerald-50/10 scale-[1.02] transition-all'
+							: ''
+				}`}
 			>
 				<div className="min-w-0 pr-2">
 					<div 
@@ -2283,8 +2319,8 @@ if (sortBy === 'custom') {
           </h3>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             {lang === 'bn' 
-              ? 'আপনি কি নিশ্চিত এই গ্রাহকের সম্পূর্ণ অ্যাকাউন্ট ট্র্যাশে স্থানান্তর করতে চান? এটি ৭ দিন পর স্থায়ীভাবে মুছে যাবে।' 
-              : 'Are you sure you want to move this customer account to the trash? It will be permanently deleted after 7 days.'}
+              ? 'আপনি কি নিশ্চিত এই গ্রাহকের সম্পূর্ণ অ্যাকাউন্ট ট্র্যাশে স্থানান্তর করতে চান? এটি ১৪ দিন পর স্থায়ীভাবে মুছে যাবে।' 
+              : 'Are you sure you want to move this customer account to the trash? It will be permanently deleted after 14 days.'}
           </p>
           
           {/* Details Card showing customer name, phone, and outstanding balance */}

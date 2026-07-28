@@ -211,7 +211,7 @@ export const translations = {
  youOweCustomer: "আপনি গ্রাহকের কাছে দেনাদার",
  allClear: "সব পরিষ্কার!",
  remindWhatsApp: "হোয়াটসঅ্যাপ বার্তা পাঠান",
- sendSmsReminder: "এসএমএস এর মাধ্যমে পাঠান",
+ sendSmsReminder: "এসএমএস বার্তা পাঠান",
  deleteAccount: "অ্যাকাউন্ট মুছুন",
  letThemBuy: "গ্রাহক বাকি নিল (বাকি)",
  gotCash: "নগদ পেলাম (আদায়)",

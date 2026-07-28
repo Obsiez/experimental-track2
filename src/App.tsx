@@ -12,7 +12,7 @@ import Dashboard from './components/Dashboard';
 import CustomerManager from './components/CustomerManager';
 import RemindersManager from './components/RemindersManager';
 import SettingsManager from './components/SettingsManager';
-import SavingsGoalManager from './components/SavingsGoalManager';
+import GoalsManager from './components/GoalsManager';
 import QuickEntryModal from './components/QuickEntryModal';
 import AnalyticsManager from './components/AnalyticsManager';
 import {
@@ -231,10 +231,12 @@ export default function App() {
     monthlySummaries,
     exportBackup,
     rebuildMonthlySummaries,
-    savingsGoals,
-    createSavingsGoal,
-    addDepositToGoal,
-    deleteSavingsGoal
+    goals,
+    goalsSynced,
+    createGoal,
+    addGoalContribution,
+    deleteGoal,
+    updateGoalStatus
   } = useLedger(user?.uid, selectedDailyDate, selectedCustomerIdForDetail);
 
   const dateInputRef = React.useRef<HTMLInputElement>(null);
@@ -599,12 +601,19 @@ export default function App() {
  <div className="flex items-center gap-2">
  {/* Quick-Entry Primary Header Trigger */}
  <button
- onClick={openQuickEntry}
- className="p-2.5 bg-emerald-600 text-white font-extrabold rounded-full shadow-md shadow-emerald-50 dark:shadow-none hover:bg-emerald-700 transition-all cursor-pointer flex items-center justify-center"
- id="quick_add_header_btn"
- title={t.recordEntry}
+ onClick={() => { triggerHaptic('single'); navigateTo('reminders'); }}
+ className={`p-2.5 rounded-full border transition-all cursor-pointer flex items-center justify-center relative ${
+   currentTab === 'reminders'
+     ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30'
+     : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-100'
+ }`}
+ title={t.reminders}
+ id="header_reminders_btn"
  >
- <Plus className="w-5 h-5 stroke-[2.5]" />
+ <Bell className="w-5 h-5 stroke-[2]" />
+ {reminders.filter(r => r.active).length > 0 && (
+   <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white dark:ring-zinc-900" />
+ )}
  </button>
  </div>
  </div>
@@ -670,11 +679,14 @@ updateSettings={updateSettings}
  )}
 
  {currentTab === 'goals' && (
-  <SavingsGoalManager 
-  savingsGoals={savingsGoals}
-  createSavingsGoal={createSavingsGoal}
-  addDepositToGoal={addDepositToGoal}
-  deleteSavingsGoal={deleteSavingsGoal}
+  <GoalsManager 
+  goals={goals}
+  goalsSynced={goalsSynced}
+  customers={customers}
+  createGoal={createGoal}
+  addGoalContribution={addGoalContribution}
+  deleteGoal={deleteGoal}
+  updateGoalStatus={updateGoalStatus}
   lang={lang}
   />
   )}
@@ -864,16 +876,18 @@ updateSettings={updateSettings}
   </main>
 
   {/* FAST ACCESS FLOATING TRIGGER (Only home & customers) */}
- {(currentTab === 'home' || currentTab === 'customers') && (
  <button
  onClick={openQuickEntry}
- className="fixed bottom-22 sm:bottom-6 right-6 w-14 h-14 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center shadow-lg shadow-rose-200 dark:shadow-none transition-all cursor-pointer z-40"
+ className={`fixed right-6 w-14 h-14 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center shadow-lg shadow-rose-200 dark:shadow-none transition-all cursor-pointer z-40 ${
+   (currentTab === 'home' || currentTab === 'customers')
+     ? 'bottom-22 sm:bottom-6 flex'
+     : 'hidden sm:flex sm:bottom-6'
+ }`}
  title={t.recordEntry}
  id="fab_entry_btn"
  >
  <Plus className="w-8 h-8 stroke-[3]" />
  </button>
- )}
 
  {/* BOTTOM NAVIGATION TABS (Tablet and Smartphone Thumb-Optimized) */}
  <nav className="fixed bottom-0 inset-x-0 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 py-2 px-4 shadow-xl z-40 sm:py-3 md:py-4">
@@ -904,18 +918,7 @@ updateSettings={updateSettings}
  <span className="text-2xs font-semibold">{t.clients}</span>
  </button>
 
- <button
- onClick={() => navigateTo('reminders')}
- className={`flex flex-col items-center justify-center gap-1 w-20 py-1 mx-auto cursor-pointer transition-colors ${
- currentTab === 'reminders'
- ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
- : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-650'
- }`}
- id="nav_reminders_tab"
- >
- <Bell className="w-6 h-6 stroke-[2]" />
- <span className="text-2xs font-semibold">{t.reminders}</span>
- </button>
+ 
 
  <button
  onClick={() => navigateTo('goals')}
