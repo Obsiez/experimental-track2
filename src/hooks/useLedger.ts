@@ -107,7 +107,7 @@ export function useLedger(
 
   // Sync count of total transactions for the selected customer
   useEffect(() => {
-    if (!userId || !selectedCustomerId) {
+    if (!userId || !activeCustomerId) {
       setActiveCustomerTxCount(0);
       return;
     }
@@ -115,7 +115,7 @@ export function useLedger(
       try {
         const stored = localStorage.getItem(`easy_due_transactions_${userId}`);
         if (stored) {
-          const count = JSON.parse(stored).filter((t: any) => t.customerId === selectedCustomerId).length;
+          const count = JSON.parse(stored).filter((t: any) => t.customerId === activeCustomerId).length;
           setActiveCustomerTxCount(count);
         }
       } catch (e) {
@@ -127,7 +127,7 @@ export function useLedger(
     const fetchCount = async () => {
       try {
         const txRef = collection(db, 'users', userId, 'transactions');
-        const q = query(txRef, where('customerId', '==', selectedCustomerId));
+        const q = query(txRef, where('customerId', '==', activeCustomerId));
         const snap = await getCountFromServer(q);
         setActiveCustomerTxCount(snap.data().count);
       } catch (err) {
@@ -136,7 +136,7 @@ export function useLedger(
     };
     
     fetchCount();
-  }, [userId, selectedCustomerId]);
+  }, [userId, activeCustomerId]);
 
   const [goals, setGoals] = useState<SavingGoal[]>([]);
   const [goalsSynced, setGoalsSynced] = useState(false);
