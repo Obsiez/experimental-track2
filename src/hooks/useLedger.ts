@@ -28,6 +28,71 @@ export function useLedger(
   const [customerTransactions, setCustomerTransactions] = useState<Transaction[]>([]);
   const [archiveTransactions, setArchiveTransactions] = useState<Transaction[]>([]);
   const [monthlySummaries, setMonthlySummaries] = useState<any[]>([]);
+
+  // Atomically adjust monthly summaries state locally for instant offline sync
+  const adjustLocalMonthlySummaries = (
+    oldTx: Transaction | null,
+    newTx: Transaction | null
+  ) => {
+    const getTxMonthKey = (tx: Transaction) => {
+      const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    const targetMonth = newTx ? getTxMonthKey(newTx) : (oldTx ? getTxMonthKey(oldTx) : null);
+    if (!targetMonth) return;
+
+    setMonthlySummaries(prev => {
+      const list = [...prev];
+      let summary = list.find(s => s.id === targetMonth);
+      if (!summary) {
+        summary = {
+          id: targetMonth,
+          dues: 0,
+          payments: 0,
+          count: 0,
+          customerPayments: {}
+        };
+        list.push(summary);
+      }
+
+      if (oldTx) {
+        summary.count = Math.max(0, (summary.count || 0) - 1);
+        if (oldTx.type === 'due') {
+          summary.dues = (summary.dues || 0) - oldTx.amount;
+        } else {
+          summary.payments = (summary.payments || 0) - oldTx.amount;
+          if (summary.customerPayments && summary.customerPayments[oldTx.customerId]) {
+            summary.customerPayments[oldTx.customerId].total = Math.max(
+              0,
+              (summary.customerPayments[oldTx.customerId].total || 0) - oldTx.amount
+            );
+          }
+        }
+      }
+
+      if (newTx) {
+        summary.count = (summary.count || 0) + 1;
+        if (newTx.type === 'due') {
+          summary.dues = (summary.dues || 0) + newTx.amount;
+        } else {
+          summary.payments = (summary.payments || 0) + newTx.amount;
+          if (!summary.customerPayments) summary.customerPayments = {};
+          if (!summary.customerPayments[newTx.customerId]) {
+            summary.customerPayments[newTx.customerId] = {
+              name: newTx.customerName || 'Unknown',
+              total: 0
+            };
+          }
+          summary.customerPayments[newTx.customerId].total = (summary.customerPayments[newTx.customerId].total || 0) + newTx.amount;
+        }
+      }
+
+      const filteredList = list.filter(s => s.count > 0);
+      localStorage.setItem(`easy_due_monthly_summaries_${userId}`, JSON.stringify(filteredList));
+      return filteredList;
+    });
+  };
   const [goals, setGoals] = useState<SavingGoal[]>([]);
   const [goalsSynced, setGoalsSynced] = useState(false);
 
@@ -477,6 +542,45 @@ const lastSubmitRef = useRef<{
 
     return () => unsubscribe();
   }, [userId]);
+
+  // Sync count from server once on startup using server aggregation count
+  useEffect(() => {
+    if (!userId || userId === 'local-guest-session' || isOfflineFallback) {
+      if (userId === 'local-guest-session') {
+        const stored = localStorage.getItem(`easy_due_transactions_${userId}`);
+        const count = stored ? JSON.parse(stored).length : 0;
+        if (settings && settings.transactionsCount !== count) {
+          const newSettings = { ...settings, transactionsCount: count };
+          setSettings(newSettings);
+          saveLocalSettings(newSettings);
+        }
+      }
+      return;
+    }
+    
+    const syncCount = async () => {
+      try {
+        const txRef = collection(db, 'users', userId, 'transactions');
+        const snap = await getCountFromServer(txRef);
+        const count = snap.data().count;
+        
+        if (settings && settings.transactionsCount !== count) {
+          const newSettings = { ...settings, transactionsCount: count };
+          setSettings(newSettings);
+          saveLocalSettings(newSettings);
+          
+          const userDocRef = doc(db, 'users', userId);
+          await updateDoc(userDocRef, { transactionsCount: count, updatedAt: serverTimestamp() });
+        }
+      } catch (err) {
+        console.warn("Failed to sync total transaction count:", err);
+      }
+    };
+    
+    if (settings) {
+      syncCount();
+    }
+  }, [userId, !settings, isOfflineFallback] /* triggers count sync */);
 
   // 4. Sync Reminders collection
  useEffect(() => {
@@ -1170,6 +1274,8 @@ const lastSubmitRef = useRef<{
     setArchiveTransactions(prev => prev.map(t => t.id === transactionId ? updatedTx : t));
     setTransactions(prev => prev.map(t => t.id === transactionId ? updatedTx : t));
 
+    adjustLocalMonthlySummaries(tx, updatedTx);
+
     if (userId === 'local-guest-session' || isOfflineFallback) return;
 
     const batch = writeBatch(db);
@@ -1182,6 +1288,8 @@ const lastSubmitRef = useRef<{
       outstandingDue: increment(netDiff),
       updatedAt: serverTimestamp()
     });
+
+    adjustMonthlySummary(batch, userId, tx, updatedTx);
 
     try {
       await batch.commit();
@@ -1237,6 +1345,8 @@ const lastSubmitRef = useRef<{
     setCustomerTransactions(prev => prev.filter(t => t.id !== transactionId));
     setArchiveTransactions(prev => prev.filter(t => t.id !== transactionId));
     setTransactions(prev => prev.filter(t => t.id !== transactionId));
+
+    adjustLocalMonthlySummaries(tx, null);
 
     // Update settings count locally
     if (settings) {

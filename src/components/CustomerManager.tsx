@@ -115,7 +115,7 @@ const SwipeableCustomerItem = ({
 
 	const handleTouchStart = (e: React.TouchEvent) => {
 		if (!swipeGesturesEnabled || isSnappingRef.current || isDeleting) return;
-		if ((window as any).activeSwipingId && (window as any).activeSwipingId !== customer.id) return;
+		
 		setStartX(e.touches[0].clientX);
 		setStartY(e.touches[0].clientY);
 		setIsSwiping(false);
@@ -224,6 +224,22 @@ const parseFirestoreDate = (dateVal: any): Date => {
   const parsed = new Date(dateVal);
   return isNaN(parsed.getTime()) ? new Date() : parsed;
 };
+
+const UserSilhouettePlaceholder = ({ lang }: { lang: 'en' | 'bn' }) => (
+  <div className="w-full border-2 border-dashed border-emerald-400 dark:border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/10 rounded-2xl p-5 flex items-center justify-between animate-pulse pointer-events-none">
+    <div className="flex items-center gap-3">
+      {/* User Silhouette Circle */}
+      <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-500 dark:text-emerald-400">
+        <Users className="w-5 h-5 stroke-[2]" />
+      </div>
+      <div className="space-y-1.5">
+        <div className="w-28 h-4 bg-emerald-200/50 dark:bg-emerald-800/30 rounded" />
+        <div className="w-20 h-3 bg-emerald-100/40 dark:bg-emerald-800/20 rounded" />
+      </div>
+    </div>
+    <div className="w-12 h-6 bg-emerald-100/40 dark:bg-emerald-800/20 rounded-lg" />
+  </div>
+);
 
 interface CustomerManagerProps {
  customers: Customer[];
@@ -339,6 +355,58 @@ export default function CustomerManager({
   const [draggedCustomerId, setDraggedCustomerId] = useState<string | null>(null);
   const [draggedOverCustomerId, setDraggedOverCustomerId] = useState<string | null>(null);
   const [activeSwipingId, setActiveSwipingId] = useState<string | null>(null);
+
+  // Auto-scroll window during active Drag & Drop operations
+  React.useEffect(() => {
+    if (!draggedCustomerId) return;
+
+    let scrollInterval: any = null;
+
+    const handleWindowDragOver = (e: DragEvent) => {
+      const threshold = 150;
+      const speed = 15;
+      const clientY = e.clientY;
+
+      if (clientY < threshold) {
+        if (!scrollInterval) {
+          scrollInterval = setInterval(() => {
+            window.scrollBy({ top: -speed, behavior: 'auto' });
+          }, 40);
+        }
+      } else if (clientY > window.innerHeight - threshold) {
+        if (!scrollInterval) {
+          scrollInterval = setInterval(() => {
+            window.scrollBy({ top: speed, behavior: 'auto' });
+          }, 40);
+        }
+      } else {
+        if (scrollInterval) {
+          clearInterval(scrollInterval);
+          scrollInterval = null;
+        }
+      }
+    };
+
+    const handleWindowDragEnd = () => {
+      if (scrollInterval) {
+        clearInterval(scrollInterval);
+        scrollInterval = null;
+      }
+    };
+
+    window.addEventListener('dragover', handleWindowDragOver);
+    window.addEventListener('dragend', handleWindowDragEnd);
+    window.addEventListener('drop', handleWindowDragEnd);
+
+    return () => {
+      window.removeEventListener('dragover', handleWindowDragOver);
+      window.removeEventListener('dragend', handleWindowDragEnd);
+      window.removeEventListener('drop', handleWindowDragEnd);
+      if (scrollInterval) {
+        clearInterval(scrollInterval);
+      }
+    };
+  }, [draggedCustomerId]);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggedCustomerId(id);
@@ -1345,18 +1413,22 @@ if (sortBy === 'custom') {
     const insertDirection = draggedIndex < targetIndex ? 'below' : 'above';
 
     return (
-      <div key={c.id} className="w-full flex flex-col">
+      <div 
+        key={c.id} 
+        className="w-full flex flex-col"
+        onDragOver={(e) => handleDragOver(e, c.id)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, c.id)}
+      >
         {/* Insertion Indicator Above */}
         {isOver && insertDirection === 'above' && (
           <motion.div 
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="w-full pb-2"
+            initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+            animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
+            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+            className="w-full"
           >
-            <div className="w-full relative h-1 bg-emerald-500 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.8)]">
-              <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-3 h-3 bg-emerald-500 rounded-full ring-4 ring-emerald-500/30" />
-            </div>
+            <UserSilhouettePlaceholder lang={lang} />
           </motion.div>
         )}
 
@@ -1402,10 +1474,12 @@ if (sortBy === 'custom') {
  				} ${
  					draggedCustomerId === c.id 
  						? 'opacity-30 border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-100/10' 
- 						: draggedOverCustomerId === c.id
- 							? 'border-2 border-emerald-500 border-dashed bg-emerald-50/10 scale-[1.02] transition-all'
- 							: ''
- 				}`}
+ 						: ''
+ 				} ${
+          draggedCustomerId !== null && draggedCustomerId !== c.id 
+            ? 'pointer-events-none' 
+            : ''
+        }`}
  			>
  				<div className="min-w-0 pr-2">
  					<div 
@@ -1427,9 +1501,9 @@ if (sortBy === 'custom') {
  						{c.phone || (lang === 'bn' ? '(ফোন নম্বর নেই)' : '(No phone)')}
  					</div>
  				</div>
- 				<div className="text-right shrink-0 flex items-center gap-2">
- 					<div className="min-w-0">
- 						<div className={`text-sm font-black truncate ${
+ 				<div className="text-right shrink-0 flex items-center gap-1">
+ 					<div className="min-w-0 pr-1">
+ 						<div className={`text-base font-black truncate ${
  							c.outstandingDue > 0
  								? 'text-rose-600 dark:text-rose-400'
  								: c.outstandingDue < 0
@@ -1452,7 +1526,7 @@ if (sortBy === 'custom') {
  							)}
  						</div>
  					</div>
- 					<ChevronRight className="w-5 h-5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
+ 					<ChevronRight className="w-5 h-5 text-zinc-400 group-hover:translate-x-0.5 transition-transform -mr-1.5" />
  				</div>
  			</div>
  		</SwipeableCustomerItem>
@@ -1460,14 +1534,12 @@ if (sortBy === 'custom') {
         {/* Insertion Indicator Below */}
         {isOver && insertDirection === 'below' && (
           <motion.div 
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="w-full pt-2"
+            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+            animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
+            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+            className="w-full"
           >
-            <div className="w-full relative h-1 bg-emerald-500 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.8)]">
-              <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-3 h-3 bg-emerald-500 rounded-full ring-4 ring-emerald-500/30" />
-            </div>
+            <UserSilhouettePlaceholder lang={lang} />
           </motion.div>
         )}
       </div>

@@ -879,10 +879,10 @@ updateSettings={updateSettings}
   {/* FAST ACCESS FLOATING TRIGGER (Only home & customers) */}
  <button
  onClick={openQuickEntry}
- className={`fixed right-6 w-14 h-14 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center shadow-lg shadow-rose-200 dark:shadow-none transition-all cursor-pointer z-40 ${
+ className={`fixed w-14 h-14 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center shadow-lg shadow-rose-200 dark:shadow-none transition-all cursor-pointer z-40 ${
    (currentTab === 'home' || currentTab === 'customers')
-     ? 'bottom-22 sm:bottom-24 flex'
-     : 'hidden sm:flex sm:bottom-24'
+     ? 'bottom-22 right-6 sm:bottom-36 sm:right-[calc(50%-285px)] md:right-[calc(50%-365px)] lg:right-[calc(50%-445px)] xl:right-[calc(50%-565px)] flex'
+     : 'hidden sm:flex sm:bottom-36 sm:right-[calc(50%-285px)] md:right-[calc(50%-365px)] lg:right-[calc(50%-445px)] xl:right-[calc(50%-565px)]'
  }`}
  title={t.recordEntry}
  id="fab_entry_btn"
