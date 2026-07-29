@@ -27,7 +27,17 @@ export function useLedger(
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [customerTransactions, setCustomerTransactions] = useState<Transaction[]>([]);
   const [archiveTransactions, setArchiveTransactions] = useState<Transaction[]>([]);
-  const [monthlySummaries, setMonthlySummaries] = useState<any[]>([]);
+    const [monthlySummaries, setMonthlySummaries] = useState<any[]>([]);
+
+  // Robust date parser to handle Firestore plain-serialized, timestamp and Date formats safely
+  const parseTxDate = (dateField: any): Date => {
+    if (!dateField) return new Date();
+    if (dateField instanceof Date) return dateField;
+    if (typeof dateField.toDate === 'function') return dateField.toDate();
+    if (typeof dateField.seconds === 'number') return new Date(dateField.seconds * 1000);
+    const parsed = new Date(dateField);
+    return isNaN(parsed.getTime()) ? new Date() : parsed;
+  };
 
   // Atomically adjust monthly summaries state locally for instant offline sync
   const adjustLocalMonthlySummaries = (
@@ -35,7 +45,7 @@ export function useLedger(
     newTx: Transaction | null
   ) => {
     const getTxMonthKey = (tx: Transaction) => {
-      const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      const d = parseTxDate(tx.date);
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     };
 
@@ -93,6 +103,41 @@ export function useLedger(
       return filteredList;
     });
   };
+  const [activeCustomerTxCount, setActiveCustomerTxCount] = useState<number>(0);
+
+  // Sync count of total transactions for the selected customer
+  useEffect(() => {
+    if (!userId || !selectedCustomerId) {
+      setActiveCustomerTxCount(0);
+      return;
+    }
+    if (userId === 'local-guest-session') {
+      try {
+        const stored = localStorage.getItem(`easy_due_transactions_${userId}`);
+        if (stored) {
+          const count = JSON.parse(stored).filter((t: any) => t.customerId === selectedCustomerId).length;
+          setActiveCustomerTxCount(count);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+      return;
+    }
+    
+    const fetchCount = async () => {
+      try {
+        const txRef = collection(db, 'users', userId, 'transactions');
+        const q = query(txRef, where('customerId', '==', selectedCustomerId));
+        const snap = await getCountFromServer(q);
+        setActiveCustomerTxCount(snap.data().count);
+      } catch (err) {
+        console.warn("Failed to fetch customer tx count:", err);
+      }
+    };
+    
+    fetchCount();
+  }, [userId, selectedCustomerId]);
+
   const [goals, setGoals] = useState<SavingGoal[]>([]);
   const [goalsSynced, setGoalsSynced] = useState(false);
 
@@ -728,7 +773,7 @@ const lastSubmitRef = useRef<{
     newTx: Transaction | null
   ) => {
     const getTxMonthKey = (tx: Transaction) => {
-      const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      const d = parseTxDate(tx.date);
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     };
 
@@ -787,8 +832,7 @@ const lastSubmitRef = useRef<{
       qSnap.forEach(docSnap => {
         const tx = docSnap.data() as Transaction;
         tx.id = docSnap.id;
-        const d = tx.date?.toDate ? tx.date.toDate() : new Date(tx.date);
-        if (isNaN(d.getTime())) return;
+        const d = parseTxDate(tx.date);
         
         totalCount++;
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -1353,6 +1397,7 @@ const lastSubmitRef = useRef<{
 
     adjustLocalMonthlySummaries(tx, null);
 
+    setActiveCustomerTxCount(prev => Math.max(0, prev - 1));
     // Update settings count locally
     if (settings) {
       const newSettings = {
@@ -2056,7 +2101,8 @@ const lastSubmitRef = useRef<{
     permanentlyDeleteCustomer,
     emptyTrash,
     importLedgerData,
-    hasMoreCustomerTxs: customerTransactions.length === customerTxLimit,
+    activeCustomerTxCount,
+    hasMoreCustomerTxs: customerTransactions.length < activeCustomerTxCount && activeCustomerTxCount > 5,
     customerTxLimit,
     loadMoreCustomerTransactions: () => setCustomerTxLimit(prev => prev + 10),
     resetCustomerTxLimit: () => setCustomerTxLimit(5),

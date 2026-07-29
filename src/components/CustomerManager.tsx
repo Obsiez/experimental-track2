@@ -357,6 +357,7 @@ export default function CustomerManager({
   const [draggedCustomerId, setDraggedCustomerId] = useState<string | null>(null);
   const [draggedOverCustomerId, setDraggedOverCustomerId] = useState<string | null>(null);
   const [activeSwipingId, setActiveSwipingId] = useState<string | null>(null);
+  const lastSwappedTargetIdRef = useRef<string | null>(null);
 
   // Smooth requestAnimationFrame Auto-scroll
   React.useEffect(() => {
@@ -422,6 +423,7 @@ export default function CustomerManager({
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (!draggedCustomerId || draggedCustomerId === targetId) return;
+    if (lastSwappedTargetIdRef.current === targetId) return; // Skip if already swapped to prevent loop
 
     const sourceCust = customers.find(c => c.id === draggedCustomerId);
     const targetCust = customers.find(c => c.id === targetId);
@@ -441,6 +443,7 @@ export default function CustomerManager({
       updatedOrder.splice(sourceIndex, 1);
       updatedOrder.splice(targetIndex, 0, draggedCustomerId);
       
+      lastSwappedTargetIdRef.current = targetId; // Lock target to prevent back-and-forth vibration
       saveCustomOrder(updatedOrder);
       triggerHaptic('light'); // subtle swap haptic
     }
@@ -452,6 +455,7 @@ export default function CustomerManager({
 
   const handleDragEnd = () => {
     setDraggedCustomerId(null);
+    lastSwappedTargetIdRef.current = null;
   };
 
   const handleDrop = (e: React.DragEvent, targetId: string) => {
@@ -1997,7 +2001,7 @@ if (sortBy === 'custom') {
    {/* HISTORICAL LEDGER FOR THIS CUSTOMER */}
   <div id="statements_timeline" className="space-y-3">
     <span className="text-xs font-extrabold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
-      {t.statements} ({formatNumber(selectedCustomerTransactions.length, lang)})
+      {t.statements} ({formatNumber(activeCustomerTxCount, lang)})
     </span>
 
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-md">

@@ -229,6 +229,7 @@ export default function App() {
     loadMoreCustomerTransactions,
     resetCustomerTxLimit,
     monthlySummaries,
+    activeCustomerTxCount,
     exportBackup,
     rebuildMonthlySummaries,
     goals,
