@@ -480,7 +480,7 @@ const lastSubmitRef = useRef<{
       return;
     }
     const summariesRef = collection(db, 'users', userId, 'monthly_summaries');
-    const q = query(summariesRef, orderBy('__name__', 'desc'), limit(6));
+    const q = query(summariesRef, limit(12));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = [];
@@ -490,6 +490,7 @@ const lastSubmitRef = useRef<{
           ...docSnap.data()
         });
       });
+      list.sort((a, b) => b.id.localeCompare(a.id));
       setMonthlySummaries(list);
       localStorage.setItem(`easy_due_monthly_summaries_${userId}`, JSON.stringify(list));
     }, (error) => {
@@ -772,6 +773,8 @@ const lastSubmitRef = useRef<{
 
   const rebuildMonthlySummaries = async (uid: string) => {
     if (!uid || uid === 'local-guest-session') return;
+    if ((window as any).isRebuildingSummaries) return;
+    (window as any).isRebuildingSummaries = true;
     console.log("Rebuilding monthly summaries for user:", uid);
     
     try {
@@ -824,13 +827,13 @@ const lastSubmitRef = useRef<{
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      // Write each summary
+      // Write each summary (overwrite to clear deleted client payments completely)
       Object.keys(summaries).forEach(monthKey => {
         const summaryRef = doc(db, 'users', uid, 'monthly_summaries', monthKey);
         batch.set(summaryRef, {
           ...summaries[monthKey],
           updatedAt: serverTimestamp()
-        }, { merge: true });
+        });
       });
 
       await batch.commit();
@@ -843,6 +846,8 @@ const lastSubmitRef = useRef<{
       }
     } catch (e) {
       console.warn("Failed to rebuild monthly summaries:", e);
+    } finally {
+      (window as any).isRebuildingSummaries = false;
     }
   };
 
@@ -1802,6 +1807,16 @@ const lastSubmitRef = useRef<{
       rebuildMonthlySummaries(userId).catch(e => console.warn(e));
     }
   }, [userId, settings, isOfflineFallback]);
+
+  // Auto-heal Monthly Summaries: rebuild if user has transactions but summaries is empty
+  useEffect(() => {
+    if (!userId || userId === 'local-guest-session' || isOfflineFallback || !settings) return;
+    const txCount = settings.transactionsCount || 0;
+    if (txCount > 0 && monthlySummaries.length === 0) {
+      console.log("Monthly summaries empty but user has transactions. Auto-healing summaries...");
+      rebuildMonthlySummaries(userId).catch(e => console.warn(e));
+    }
+  }, [userId, settings?.transactionsCount, monthlySummaries.length, isOfflineFallback]);
 
   // 5. Automatic cleanup of trashed items older than 14 days
   useEffect(() => {

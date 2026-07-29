@@ -225,15 +225,17 @@ const parseFirestoreDate = (dateVal: any): Date => {
   return isNaN(parsed.getTime()) ? new Date() : parsed;
 };
 
-const UserSilhouettePlaceholder = ({ lang }: { lang: 'en' | 'bn' }) => (
-  <div className="w-full border-2 border-dashed border-emerald-400 dark:border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/10 rounded-2xl p-5 flex items-center justify-between animate-pulse pointer-events-none">
+const UserSilhouettePlaceholder = ({ lang, name }: { lang: 'en' | 'bn'; name: string }) => (
+  <div className="w-full border-2 border-dashed border-emerald-400 dark:border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/10 rounded-2xl p-5 flex items-center justify-between animate-pulse">
     <div className="flex items-center gap-3">
       {/* User Silhouette Circle */}
       <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-500 dark:text-emerald-400">
         <Users className="w-5 h-5 stroke-[2]" />
       </div>
-      <div className="space-y-1.5">
-        <div className="w-28 h-4 bg-emerald-200/50 dark:bg-emerald-800/30 rounded" />
+      <div className="space-y-1">
+        <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 truncate max-w-[150px]">
+          {name}
+        </div>
         <div className="w-20 h-3 bg-emerald-100/40 dark:bg-emerald-800/20 rounded" />
       </div>
     </div>
@@ -356,43 +358,45 @@ export default function CustomerManager({
   const [draggedOverCustomerId, setDraggedOverCustomerId] = useState<string | null>(null);
   const [activeSwipingId, setActiveSwipingId] = useState<string | null>(null);
 
-  // Auto-scroll window during active Drag & Drop operations
+  // Smooth requestAnimationFrame Auto-scroll
   React.useEffect(() => {
     if (!draggedCustomerId) return;
 
-    let scrollInterval: any = null;
+    let animationFrameId: number | null = null;
+    let scrollSpeed = 0;
+
+    const scrollLoop = () => {
+      if (scrollSpeed !== 0) {
+        window.scrollBy(0, scrollSpeed);
+      }
+      animationFrameId = requestAnimationFrame(scrollLoop);
+    };
 
     const handleWindowDragOver = (e: DragEvent) => {
       const threshold = 150;
-      const speed = 15;
+      const maxSpeed = 15;
       const clientY = e.clientY;
 
       if (clientY < threshold) {
-        if (!scrollInterval) {
-          scrollInterval = setInterval(() => {
-            window.scrollBy({ top: -speed, behavior: 'auto' });
-          }, 40);
-        }
+        const ratio = (threshold - clientY) / threshold;
+        scrollSpeed = -Math.round(maxSpeed * ratio);
       } else if (clientY > window.innerHeight - threshold) {
-        if (!scrollInterval) {
-          scrollInterval = setInterval(() => {
-            window.scrollBy({ top: speed, behavior: 'auto' });
-          }, 40);
-        }
+        const ratio = (clientY - (window.innerHeight - threshold)) / threshold;
+        scrollSpeed = Math.round(maxSpeed * ratio);
       } else {
-        if (scrollInterval) {
-          clearInterval(scrollInterval);
-          scrollInterval = null;
-        }
+        scrollSpeed = 0;
       }
     };
 
     const handleWindowDragEnd = () => {
-      if (scrollInterval) {
-        clearInterval(scrollInterval);
-        scrollInterval = null;
+      scrollSpeed = 0;
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
       }
     };
+
+    animationFrameId = requestAnimationFrame(scrollLoop);
 
     window.addEventListener('dragover', handleWindowDragOver);
     window.addEventListener('dragend', handleWindowDragEnd);
@@ -402,8 +406,8 @@ export default function CustomerManager({
       window.removeEventListener('dragover', handleWindowDragOver);
       window.removeEventListener('dragend', handleWindowDragEnd);
       window.removeEventListener('drop', handleWindowDragEnd);
-      if (scrollInterval) {
-        clearInterval(scrollInterval);
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
       }
     };
   }, [draggedCustomerId]);
@@ -414,27 +418,9 @@ export default function CustomerManager({
     triggerHaptic('single');
   };
 
-  const handleDragOver = (e: React.DragEvent, id: string) => {
+  const handleDragOver = (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (draggedCustomerId === id) return;
-    if (draggedOverCustomerId !== id) {
-      setDraggedOverCustomerId(id);
-    }
-  };
-
-  const handleDragLeave = () => {
-    setDraggedOverCustomerId(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedCustomerId(null);
-    setDraggedOverCustomerId(null);
-  };
-
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    setDraggedOverCustomerId(null);
     if (!draggedCustomerId || draggedCustomerId === targetId) return;
 
     const sourceCust = customers.find(c => c.id === draggedCustomerId);
@@ -444,32 +430,35 @@ export default function CustomerManager({
     const sourcePinned = pinnedCustomerNames.includes(sourceCust.name);
     const targetPinned = pinnedCustomerNames.includes(targetCust.name);
 
-    if (sourcePinned !== targetPinned) {
-      triggerHaptic('double');
-      toast.error(lang === 'bn' ? 'পিন করা গ্রাহকদের সাধারণ গ্রাহকদের উপরে থাকতে হবে' : 'Pinned customers must stay above unpinned customers');
-      setDraggedCustomerId(null);
-      return;
-    }
-
-    if (sortBy !== 'custom') {
-      setSortBy('custom');
-    }
+    if (sourcePinned !== targetPinned) return; // Prevent dragging across pinned boundary
 
     const currentOrder = filteredCustomers.map(c => c.id);
     const sourceIndex = currentOrder.indexOf(draggedCustomerId);
     const targetIndex = currentOrder.indexOf(targetId);
 
-    if (sourceIndex !== -1 && targetIndex !== -1) {
+    if (sourceIndex !== -1 && targetIndex !== -1 && sourceIndex !== targetIndex) {
       const updatedOrder = [...currentOrder];
       updatedOrder.splice(sourceIndex, 1);
       updatedOrder.splice(targetIndex, 0, draggedCustomerId);
       
       saveCustomOrder(updatedOrder);
-      triggerHaptic('tick');
-      toast.success(lang === 'bn' ? 'ক্রম পরিবর্তন করা হয়েছে' : 'Reordered successfully');
+      triggerHaptic('light'); // subtle swap haptic
     }
+  };
 
+  const handleDragLeave = () => {
+    setDraggedOverCustomerId(null);
+  };
+
+  const handleDragEnd = () => {
     setDraggedCustomerId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDraggedCustomerId(null);
+    triggerHaptic('tick');
+    toast.success(lang === 'bn' ? 'ক্রম পরিবর্তন করা হয়েছে' : 'Reordered successfully');
   };
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [pinnedCustomerNames, setPinnedCustomerNames] = useState<string[]>(() => {
@@ -1503,7 +1492,7 @@ if (sortBy === 'custom') {
  				</div>
  				<div className="text-right shrink-0 flex items-center gap-1">
  					<div className="min-w-0 pr-1">
- 						<div className={`text-base font-black truncate ${
+ 						<div className={`text-lg font-black truncate ${
  							c.outstandingDue > 0
  								? 'text-rose-600 dark:text-rose-400'
  								: c.outstandingDue < 0
@@ -1516,13 +1505,13 @@ if (sortBy === 'custom') {
  								`${c.outstandingDue < 0 ? '-' : ''}${formatNumber(Math.abs(c.outstandingDue), lang)}`
  							)}
  						</div>
- 						<div className="text-[10px] font-black text-zinc-400 mt-0.5">
+ 						<div className="text-xs font-black text-zinc-400 mt-0.5">
  							{c.outstandingDue > 0 ? (
  								lang === 'bn' ? 'পাবেন' : 'due'
  							) : c.outstandingDue < 0 ? (
  								lang === 'bn' ? 'দেবেন' : 'overpaid'
  							) : (
- 								lang === 'bn' ? 'সমতা' : 'clear'
+ 								lang === 'bn' ? 'পরিশোধিত' : 'settled'
  							)}
  						</div>
  					</div>
