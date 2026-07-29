@@ -602,7 +602,7 @@ export default function App() {
  {/* Quick-Entry Primary Header Trigger */}
  <button
  onClick={() => { triggerHaptic('single'); navigateTo('reminders'); }}
- className={`p-2.5 rounded-full border transition-all cursor-pointer flex items-center justify-center relative ${
+ className={`px-4 py-2.5 rounded-xl border transition-all cursor-pointer flex items-center gap-2 relative ${
    currentTab === 'reminders'
      ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30'
      : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-100'
@@ -610,7 +610,8 @@ export default function App() {
  title={t.reminders}
  id="header_reminders_btn"
  >
- <Bell className="w-5 h-5 stroke-[2]" />
+ <Bell className="w-4.5 h-4.5 stroke-[2]" />
+ <span className="text-xs font-bold">{t.reminders}</span>
  {reminders.filter(r => r.active).length > 0 && (
    <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white dark:ring-zinc-900" />
  )}
@@ -880,8 +881,8 @@ updateSettings={updateSettings}
  onClick={openQuickEntry}
  className={`fixed right-6 w-14 h-14 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center shadow-lg shadow-rose-200 dark:shadow-none transition-all cursor-pointer z-40 ${
    (currentTab === 'home' || currentTab === 'customers')
-     ? 'bottom-22 sm:bottom-6 flex'
-     : 'hidden sm:flex sm:bottom-6'
+     ? 'bottom-22 sm:bottom-24 flex'
+     : 'hidden sm:flex sm:bottom-24'
  }`}
  title={t.recordEntry}
  id="fab_entry_btn"
